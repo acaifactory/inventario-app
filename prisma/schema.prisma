@@ -1,0 +1,570 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum MovementType {
+  ENTRY
+  EXIT
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+  PURCHASE
+  LOAN_OUT
+  LOAN_IN
+  LOAN_RETURN
+}
+
+enum ExitReason {
+  SALE
+  WASTE
+  DAMAGE
+  EXPIRED
+  TRANSFER
+  ADJUSTMENT
+  INTERNAL_USE
+  LOAN
+}
+
+enum PhysicalCountStatus {
+  DRAFT
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum UnitOfMeasure {
+  UNIT
+  LB
+  OZ
+  GALLON
+  BOX
+  CASE
+  BROKEN_CASE
+  PACK
+  BAG
+  JAR
+  ROLL
+  OTHER
+}
+
+enum FinancialClassification {
+  FOOD_COST
+  PACKAGING_COST
+  CLEANING_SUPPLIES
+  OPERATING_SUPPLIES
+  OTHER
+}
+
+enum StoreType {
+  OWNED
+  FRANCHISE
+}
+
+enum LoanDirection {
+  OUT
+  IN
+}
+
+enum LoanStatus {
+  PENDING
+  PARTIAL_RETURN
+  COMPLETE_RETURN
+}
+
+enum FinancialPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(EMPLOYEE)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements         InventoryMovement[]
+  transfers         Transfer[]
+  adjustments       InventoryAdjustment[]
+  physicalCounts    PhysicalCount[]     @relation("StartedBy")
+  exportHistory     ExportHistory[]
+  reversedMovements InventoryMovement[] @relation("ReversedBy")
+  purchaseInvoices  PurchaseInvoice[]
+  loans             Loan[]
+  loanReturns       LoanReturn[]
+  auditLogs         AuditLog[]
+  financialPeriods  FinancialPeriod[]
+  passwordResetTokens PasswordResetToken[]
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Store {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  code      String    @unique
+  type      StoreType @default(OWNED)
+  address   String?
+  city      String?
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+
+  locations        Location[]
+  purchaseInvoices PurchaseInvoice[]
+  financialPeriods FinancialPeriod[]
+  weeklySnapshots  WeeklySnapshot[]
+}
+
+model Location {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  storeId     String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  store               Store?                @relation(fields: [storeId], references: [id])
+  stocks              ProductStock[]
+  movements           InventoryMovement[]
+  transfersFrom       Transfer[]            @relation("FromLocation")
+  transfersTo         Transfer[]            @relation("ToLocation")
+  adjustments         InventoryAdjustment[]
+  physicalCounts      PhysicalCount[]
+  purchaseLines       PurchaseInvoiceLine[]
+  loans               Loan[]
+
+  @@unique([storeId, name])
+  @@index([storeId])
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  contact   String?
+  phone     String?
+  email     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  products         Product[]
+  movements        InventoryMovement[]
+  purchaseInvoices PurchaseInvoice[]
+}
+
+model Product {
+  id                      String                  @id @default(cuid())
+  name                    String
+  categoryId              String
+  subcategory             String                  @default("")
+  financialClassification FinancialClassification @default(FOOD_COST)
+  includeInFoodCost       Boolean                 @default(true)
+  unit                    UnitOfMeasure           @default(UNIT)
+  sku                     String?
+  photoUrl                String?
+  minQuantity             Float                   @default(0)
+  supplierId              String?
+  expirationDate          DateTime?
+  averageCost             Float                   @default(0)
+  lastPurchaseCost        Float?
+  lastPurchaseDate        DateTime?
+  notes                   String?
+  active                  Boolean                 @default(true)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  category           Category              @relation(fields: [categoryId], references: [id])
+  supplier           Supplier?             @relation(fields: [supplierId], references: [id])
+  stocks             ProductStock[]
+  movements          InventoryMovement[]
+  transfers          Transfer[]
+  adjustments        InventoryAdjustment[]
+  physicalCountItems PhysicalCountItem[]
+  costHistory        CostHistory[]
+  purchaseLines      PurchaseInvoiceLine[]
+  loans              Loan[]
+  units              ProductUnit[]
+
+  @@index([categoryId])
+  @@index([sku])
+  @@index([name])
+}
+
+model ProductUnit {
+  id               String        @id @default(cuid())
+  productId        String
+  unit             UnitOfMeasure
+  conversionFactor Float         @default(1)
+  label            String?
+  product          Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, unit])
+  @@index([productId])
+}
+
+model ProductStock {
+  id         String   @id @default(cuid())
+  productId  String
+  locationId String
+  quantity   Float    @default(0)
+  updatedAt  DateTime @updatedAt
+
+  product  Product  @relation(fields: [productId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@unique([productId, locationId])
+  @@index([locationId])
+}
+
+model InventoryMovement {
+  id               String        @id @default(cuid())
+  type             MovementType
+  productId        String
+  locationId       String
+  quantity         Float
+  registeredUnit     UnitOfMeasure?
+  registeredQuantity Float?
+  unitCost         Float?
+  totalCost        Float?
+  exitReason       ExitReason?
+  supplierId       String?
+  invoiceNumber    String?
+  registeredByName String   @default("Sistema")
+  notes            String?
+  userId           String
+  date             DateTime      @default(now())
+  stockBefore      Float?
+  stockAfter       Float?
+  isReversal       Boolean       @default(false)
+  reversedAt       DateTime?
+  reversedById     String?
+  reversalOfId     String?       @unique
+  purchaseLineId   String?       @unique
+  loanId           String?
+  loanReturnId     String?       @unique
+  createdAt        DateTime      @default(now())
+
+  product      Product              @relation(fields: [productId], references: [id])
+  location     Location             @relation(fields: [locationId], references: [id])
+  user         User                 @relation(fields: [userId], references: [id])
+  supplier     Supplier?            @relation(fields: [supplierId], references: [id])
+  reversedBy   User?                @relation("ReversedBy", fields: [reversedById], references: [id])
+  reversalOf   InventoryMovement?   @relation("MovementReversal", fields: [reversalOfId], references: [id])
+  reversedFrom InventoryMovement?   @relation("MovementReversal")
+  costHistory  CostHistory[]
+  transferOut  Transfer?            @relation("TransferOut")
+  transferIn   Transfer?            @relation("TransferIn")
+  purchaseLine PurchaseInvoiceLine? @relation(fields: [purchaseLineId], references: [id])
+  loan         Loan?                @relation(fields: [loanId], references: [id])
+  loanReturn   LoanReturn?          @relation(fields: [loanReturnId], references: [id])
+
+  @@index([productId, date])
+  @@index([type, date])
+  @@index([locationId])
+  @@index([registeredByName])
+  @@index([loanId])
+}
+
+model PurchaseInvoice {
+  id               String   @id @default(cuid())
+  invoiceNumber    String
+  supplierId       String
+  storeId          String?
+  date             DateTime @default(now())
+  registeredByName String   @default("Sistema")
+  userId           String
+  notes            String?
+  totalAmount      Float    @default(0)
+  createdAt        DateTime @default(now())
+
+  supplier Supplier              @relation(fields: [supplierId], references: [id])
+  store    Store?                @relation(fields: [storeId], references: [id])
+  user     User                  @relation(fields: [userId], references: [id])
+  lines    PurchaseInvoiceLine[]
+
+  @@index([date])
+  @@index([invoiceNumber])
+}
+
+model PurchaseInvoiceLine {
+  id         String        @id @default(cuid())
+  invoiceId  String
+  productId  String
+  locationId String
+  quantity   Float
+  unit       UnitOfMeasure
+  totalPrice Float
+  unitCost   Float
+  movementId String?       @unique
+
+  invoice  PurchaseInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product  Product            @relation(fields: [productId], references: [id])
+  location Location           @relation(fields: [locationId], references: [id])
+  movement InventoryMovement?
+
+  @@index([invoiceId])
+  @@index([productId])
+}
+
+model Transfer {
+  id              String   @id @default(cuid())
+  productId       String
+  fromLocationId  String
+  toLocationId    String
+  quantity        Float
+  registeredUnit     UnitOfMeasure?
+  registeredQuantity Float?
+  date            DateTime @default(now())
+  userId          String
+  registeredByName String   @default("Sistema")
+  deliveredByName String?
+  receivedByName  String?
+  notes           String?
+  movementOutId   String   @unique
+  movementInId    String   @unique
+  createdAt       DateTime @default(now())
+
+  product      Product           @relation(fields: [productId], references: [id])
+  fromLocation Location          @relation("FromLocation", fields: [fromLocationId], references: [id])
+  toLocation   Location          @relation("ToLocation", fields: [toLocationId], references: [id])
+  user         User              @relation(fields: [userId], references: [id])
+  movementOut  InventoryMovement @relation("TransferOut", fields: [movementOutId], references: [id])
+  movementIn   InventoryMovement @relation("TransferIn", fields: [movementInId], references: [id])
+}
+
+model Loan {
+  id               String        @id @default(cuid())
+  direction        LoanDirection
+  productId        String
+  locationId       String
+  quantity         Float
+  quantityReturned Float         @default(0)
+  registeredUnit     UnitOfMeasure?
+  registeredQuantity Float?
+  unitCost         Float
+  totalCost        Float
+  counterpartyName String
+  responsibleName  String
+  registeredByName String   @default("Sistema")
+  status           LoanStatus    @default(PENDING)
+  userId           String
+  date             DateTime      @default(now())
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  product    Product              @relation(fields: [productId], references: [id])
+  location   Location             @relation(fields: [locationId], references: [id])
+  user       User                 @relation(fields: [userId], references: [id])
+  movements  InventoryMovement[]
+  returns    LoanReturn[]
+
+  @@index([direction, status])
+  @@index([date])
+}
+
+model LoanReturn {
+  id               String   @id @default(cuid())
+  loanId           String
+  quantity         Float
+  registeredUnit     UnitOfMeasure?
+  registeredQuantity Float?
+  date             DateTime @default(now())
+  registeredByName String   @default("Sistema")
+  userId           String
+  notes            String?
+  movementId       String?  @unique
+  createdAt        DateTime @default(now())
+
+  loan     Loan               @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  user     User               @relation(fields: [userId], references: [id])
+  movement InventoryMovement?
+
+  @@index([loanId])
+}
+
+model InventoryAdjustment {
+  id               String   @id @default(cuid())
+  productId        String
+  locationId       String
+  expectedQuantity Float
+  countedQuantity  Float
+  difference       Float
+  reason           String
+  date             DateTime @default(now())
+  userId           String
+  registeredByName String   @default("Sistema")
+  notes            String?
+  physicalCountId  String?
+  movementId       String?
+  createdAt        DateTime @default(now())
+
+  product       Product        @relation(fields: [productId], references: [id])
+  location      Location       @relation(fields: [locationId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  physicalCount PhysicalCount? @relation(fields: [physicalCountId], references: [id])
+
+  @@index([physicalCountId])
+}
+
+model PhysicalCount {
+  id          String              @id @default(cuid())
+  name        String
+  status      PhysicalCountStatus @default(DRAFT)
+  locationId  String?
+  startedById String
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+  notes       String?
+
+  location    Location?             @relation(fields: [locationId], references: [id])
+  startedBy   User                  @relation("StartedBy", fields: [startedById], references: [id])
+  items       PhysicalCountItem[]
+  adjustments InventoryAdjustment[]
+}
+
+model PhysicalCountItem {
+  id               String  @id @default(cuid())
+  physicalCountId  String
+  productId        String
+  expectedQuantity Float
+  countedUnits     Json?
+  countedQuantity  Float?
+  difference       Float?
+
+  physicalCount PhysicalCount @relation(fields: [physicalCountId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@unique([physicalCountId, productId])
+}
+
+model CostHistory {
+  id         String   @id @default(cuid())
+  productId  String
+  unitCost   Float
+  quantity   Float
+  totalCost  Float
+  movementId String?
+  date       DateTime @default(now())
+
+  product  Product            @relation(fields: [productId], references: [id])
+  movement InventoryMovement? @relation(fields: [movementId], references: [id])
+
+  @@index([productId, date])
+}
+
+model AuditLog {
+  id               String   @id @default(cuid())
+  userId           String
+  registeredByName String   @default("Sistema")
+  action           String
+  entityType       String
+  entityId         String?
+  productId        String?
+  locationId       String?
+  quantity         Float?
+  stockBefore      Float?
+  stockAfter       Float?
+  notes            String?
+  metadata         String?
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([productId])
+}
+
+model FinancialPeriod {
+  id                    String                @id @default(cuid())
+  startDate             DateTime
+  endDate               DateTime
+  totalSales            Float
+  targetFullCostPercent Float
+  responsibleName       String
+  userId                String
+  storeId               String?
+  openingInventoryValue Float?
+  purchasesValue        Float?
+  loansInValue          Float?
+  closingInventoryValue Float?
+  loansOutValue         Float?
+  costOfSales           Float?
+  actualFullCostPercent Float?
+  variancePercent       Float?
+  opportunityDollars    Float?
+  status                FinancialPeriodStatus @default(OPEN)
+  isWeeklySnapshot      Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+
+  user  User   @relation(fields: [userId], references: [id])
+  store Store? @relation(fields: [storeId], references: [id])
+
+  @@index([startDate, endDate])
+}
+
+model WeeklySnapshot {
+  id                  String   @id @default(cuid())
+  weekStart           DateTime
+  weekEnd             DateTime
+  storeId             String?
+  inventoryValue      Float
+  foodCostValue       Float
+  packagingCostValue  Float
+  costOfSales         Float
+  totalSales          Float
+  fullCostPercent     Float
+  targetFullCostPercent Float?
+  opportunityDollars  Float
+  payload             String?
+  createdAt           DateTime @default(now())
+
+  store Store? @relation(fields: [storeId], references: [id])
+
+  @@unique([weekStart, storeId])
+}
+
+model ExportHistory {
+  id         String   @id @default(cuid())
+  reportType String
+  filters    String?
+  fileName   String?
+  userId     String
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
