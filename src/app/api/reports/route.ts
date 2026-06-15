@@ -181,38 +181,18 @@ export async function GET(request: NextRequest) {
             {
               fecha: inv.date,
               factura: inv.invoiceNumber,
-              proveedor: inv.supplier.name,
-              tienda: inv.store?.name ?? null,
+              distribuidor: inv.supplier.name,
               producto: "",
-              categoria: "",
-              localidad: "",
-              cantidad: 0,
-              unidad: "",
-              costoUnitario: 0,
-              totalLinea: 0,
-              totalFactura: inv.totalAmount,
-              registradoPor: inv.registeredByName,
+              precioTotal: 0,
             },
           ];
         }
         return inv.lines.map((line) => ({
           fecha: inv.date,
           factura: inv.invoiceNumber,
-          proveedor: inv.supplier.name,
-          tienda: inv.store?.name ?? null,
+          distribuidor: inv.supplier.name,
           producto: line.product.name,
-          categoria: line.product.category.name,
-          localidad: line.location.name,
-          cantidad: line.quantity,
-          unidad: line.unit,
-          contenidoPorUnidad: line.contentsPerUnit,
-          unidadBase: line.baseUnit,
-          cantidadBase: line.baseQuantity,
-          costoUnitarioBase: line.baseUnitCost,
-          costoUnitario: line.unitCost,
-          totalLinea: line.totalPrice,
-          totalFactura: inv.totalAmount,
-          registradoPor: inv.registeredByName,
+          precioTotal: line.totalPrice,
         }));
       });
 

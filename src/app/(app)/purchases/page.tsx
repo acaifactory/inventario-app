@@ -16,8 +16,13 @@ import {
   purchaseUnitNeedsConversion,
   suggestedContentsPerUnit,
 } from "@/lib/product-units-ui";
-import { formatCurrency, formatQtyWithUnit, getUnitLabel } from "@/lib/utils";
-import { Plus, Trash2 } from "lucide-react";
+import { formatCurrency, formatQtyWithUnit, getUnitLabel, formatDate } from "@/lib/utils";
+import {
+  exportInvoiceSpreadsheet,
+  printInvoicePortrait,
+  type InvoiceExportData,
+} from "@/lib/export/invoice-export";
+import { Download, Pencil, Plus, Printer, Trash2, X } from "lucide-react";
 
 type Line = {
   productId: string;
@@ -36,6 +41,7 @@ type InvoiceRow = {
   date: string;
   totalAmount: number;
   registeredByName: string;
+  supplier: { name: string };
   lines?: {
     quantity: number;
     unit: string;
@@ -48,6 +54,19 @@ type InvoiceRow = {
     product: { name: string; unit: string };
   }[];
 };
+
+function toExportData(inv: InvoiceRow): InvoiceExportData {
+  return {
+    invoiceNumber: inv.invoiceNumber,
+    date: inv.date,
+    supplier: inv.supplier,
+    totalAmount: inv.totalAmount,
+    lines: (inv.lines ?? []).map((line) => ({
+      product: { name: line.product.name },
+      totalPrice: line.totalPrice,
+    })),
+  };
+}
 
 function emptyLine(): Line {
   return {
@@ -78,6 +97,21 @@ export default function PurchasesPage() {
     notes: "",
   });
   const [lines, setLines] = useState<Line[]>([emptyLine()]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  function resetForm(keepRegisteredBy = true) {
+    setEditingId(null);
+    setHeader((h) => ({
+      invoiceNumber: "",
+      supplierId: "",
+      registeredByName: keepRegisteredBy ? h.registeredByName : "",
+      date: new Date().toISOString().slice(0, 10),
+      notes: "",
+    }));
+    setLines([emptyLine()]);
+    setLineProducts({});
+    setError("");
+  }
 
   function refresh() {
     fetch("/api/purchases")
@@ -122,6 +156,68 @@ export default function PurchasesPage() {
     });
   }
 
+  async function startEdit(id: string) {
+    setLoading(true);
+    setError("");
+    const res = await fetch(`/api/purchases/${id}`);
+    const inv = await res.json();
+    if (!res.ok) {
+      setError(inv.error ?? "No se pudo cargar la factura");
+      setLoading(false);
+      return;
+    }
+
+    setEditingId(id);
+    setHeader({
+      invoiceNumber: inv.invoiceNumber,
+      supplierId: inv.supplierId,
+      registeredByName: inv.registeredByName,
+      date: inv.date.slice(0, 10),
+      notes: inv.notes ?? "",
+    });
+
+    const nextLines: Line[] =
+      inv.lines?.length > 0
+        ? inv.lines.map(
+            (line: {
+              productId: string;
+              quantity: number;
+              unit: string;
+              contentsPerUnit: number | null;
+              totalPrice: number;
+              location: { storeId: string | null };
+            }) => ({
+              productId: line.productId,
+              storeId: line.location.storeId ?? "",
+              quantity: String(line.quantity),
+              unit: line.unit,
+              contentsPerUnit:
+                line.contentsPerUnit != null
+                  ? String(line.contentsPerUnit)
+                  : "",
+              totalPrice: String(line.totalPrice),
+            })
+          )
+        : [emptyLine()];
+
+    setLines(nextLines);
+
+    const nextLineProducts: Record<number, ProductOption | undefined> = {};
+    inv.lines?.forEach(
+      (
+        line: { productId: string; product: ProductOption },
+        index: number
+      ) => {
+        const product =
+          products.find((p) => p.id === line.productId) ?? line.product;
+        nextLineProducts[index] = product;
+      }
+    );
+    setLineProducts(nextLineProducts);
+    setLoading(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -143,30 +239,35 @@ export default function PurchasesPage() {
       }
     }
 
-    const res = await fetch("/api/purchases", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...header,
-        lines: lines.map((l, lineIndex) => {
-          const store = stores.find((s) => s.id === l.storeId);
-          const product = lineProducts[lineIndex];
-          const needsConversion =
-            product && purchaseUnitNeedsConversion(product, l.unit);
-          return {
-            productId: l.productId,
-            locationId: store?.defaultLocationId,
-            storeId: l.storeId,
-            quantity: Number(l.quantity),
-            unit: l.unit,
-            contentsPerUnit: needsConversion
-              ? Number(l.contentsPerUnit)
-              : undefined,
-            totalPrice: Number(l.totalPrice),
-          };
-        }),
+    const payload = {
+      ...header,
+      lines: lines.map((l, lineIndex) => {
+        const store = stores.find((s) => s.id === l.storeId);
+        const product = lineProducts[lineIndex];
+        const needsConversion =
+          product && purchaseUnitNeedsConversion(product, l.unit);
+        return {
+          productId: l.productId,
+          locationId: store?.defaultLocationId,
+          storeId: l.storeId,
+          quantity: Number(l.quantity),
+          unit: l.unit,
+          contentsPerUnit: needsConversion
+            ? Number(l.contentsPerUnit)
+            : undefined,
+          totalPrice: Number(l.totalPrice),
+        };
       }),
-    });
+    };
+
+    const res = await fetch(
+      editingId ? `/api/purchases/${editingId}` : "/api/purchases",
+      {
+        method: editingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
 
     if (!res.ok) {
       const data = await res.json();
@@ -175,15 +276,7 @@ export default function PurchasesPage() {
       return;
     }
 
-    setHeader({
-      invoiceNumber: "",
-      supplierId: "",
-      registeredByName: header.registeredByName,
-      date: new Date().toISOString().slice(0, 10),
-      notes: "",
-    });
-    setLines([emptyLine()]);
-    setLineProducts({});
+    resetForm();
     setLoading(false);
     refresh();
   }
@@ -196,6 +289,15 @@ export default function PurchasesPage() {
       />
 
       <Card className="mb-6 max-w-4xl">
+        {editingId ? (
+          <div className="mb-4 flex items-center justify-between rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900">
+            <span>Editando factura guardada</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => resetForm()}>
+              <X className="h-4 w-4" />
+              Cancelar edición
+            </Button>
+          </div>
+        ) : null}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
@@ -378,7 +480,11 @@ export default function PurchasesPage() {
           ) : null}
 
           <Button type="submit" size="lg" disabled={loading}>
-            {loading ? "Guardando..." : "Guardar factura y actualizar inventario"}
+            {loading
+              ? "Guardando..."
+              : editingId
+                ? "Guardar cambios y actualizar inventario"
+                : "Guardar factura y actualizar inventario"}
           </Button>
         </form>
       </Card>
@@ -387,37 +493,69 @@ export default function PurchasesPage() {
         <h3 className="mb-3 font-semibold">Facturas recientes</h3>
         <div className="space-y-3 text-sm">
           {invoices.map((inv) => (
-            <div key={inv.id} className="rounded-lg bg-slate-50 px-3 py-2">
-              <div className="flex justify-between font-medium">
-                <span>
-                  {inv.invoiceNumber} · {inv.registeredByName}
-                </span>
+            <div key={inv.id} className="rounded-lg bg-slate-50 px-3 py-3">
+              <div className="flex flex-wrap items-start justify-between gap-2 font-medium">
+                <div>
+                  <p>
+                    {inv.invoiceNumber} · {inv.supplier.name}
+                  </p>
+                  <p className="text-xs font-normal text-slate-500">
+                    {formatDate(inv.date)} · {inv.registeredByName}
+                  </p>
+                </div>
                 <span>{formatCurrency(inv.totalAmount)}</span>
               </div>
-              {inv.lines?.slice(0, 3).map((l, i) => (
-                <p key={i} className="mt-1 text-xs text-slate-500">
-                  {l.product.name}:{" "}
-                  {formatQtyWithUnit(l.quantity, l.unit)}
-                  {l.contentsPerUnit != null && l.baseUnit ? (
-                    <>
-                      {" "}
-                      (× {l.contentsPerUnit}{" "}
-                      {getUnitLabel(l.baseUnit)} ={" "}
-                      {formatQtyWithUnit(
-                        l.baseQuantity ?? l.quantity * l.contentsPerUnit,
-                        l.baseUnit
-                      )}
-                      )
-                    </>
-                  ) : null}{" "}
-                  = {formatCurrency(l.totalPrice)}
-                  {l.baseUnitCost != null && l.baseUnit ? (
-                    <> · {formatCurrency(l.baseUnitCost)}/{getUnitLabel(l.baseUnit)}</>
-                  ) : (
-                    <> · {formatCurrency(l.unitCost)}/{getUnitLabel(l.unit)}</>
-                  )}
-                </p>
-              ))}
+
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs text-slate-600">
+                  <thead>
+                    <tr className="text-left text-slate-500">
+                      <th className="pb-1 pr-3 font-medium">Producto</th>
+                      <th className="pb-1 font-medium text-right">Precio total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inv.lines?.map((l, i) => (
+                      <tr key={i}>
+                        <td className="py-0.5 pr-3">{l.product.name}</td>
+                        <td className="py-0.5 text-right">
+                          {formatCurrency(l.totalPrice)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => startEdit(inv.id)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Editar
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => printInvoicePortrait(toExportData(inv))}
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => exportInvoiceSpreadsheet(toExportData(inv))}
+                >
+                  <Download className="h-4 w-4" />
+                  Exportar
+                </Button>
+              </div>
             </div>
           ))}
         </div>

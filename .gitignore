@@ -50,3 +50,5 @@ prisma/data/
 .vercel
 
 .env*
+
+.env*

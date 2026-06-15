@@ -91,7 +91,9 @@ export async function POST(request: NextRequest) {
               ? "Indica cuánto contiene cada unidad de compra"
               : message === "INVALID_CONTENTS_PER_UNIT"
                 ? "La cantidad contenida debe ser mayor que cero"
-                : mapStoreLocationError(message),
+                : message === "INSUFFICIENT_STOCK_FOR_EDIT"
+                  ? "No se puede editar: ya se usó parte de esta compra y no hay stock suficiente para revertir"
+                  : mapStoreLocationError(message),
       },
       { status: 400 }
     );
