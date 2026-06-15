@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { LoanDirection, UnitOfMeasure } from "@prisma/client";
 import { writeAuditLog } from "./audit";
+import { reverseMovement } from "./movements";
 import { getLocationStock } from "./stock-helpers";
 import { resolveQuantityToBase, assertDynamicConversion } from "./units";
 
@@ -301,4 +302,45 @@ export async function returnLoan(input: ReturnLoanInput) {
       include: { returns: true, product: true, location: true },
     });
   });
+}
+
+export async function updateLoan(loanId: string, input: CreateLoanInput) {
+  const loan = await prisma.loan.findUniqueOrThrow({
+    where: { id: loanId },
+    include: { movements: true, returns: true },
+  });
+
+  if (loan.quantityReturned > 0) {
+    throw new Error("LOAN_HAS_RETURNS");
+  }
+
+  const mainMovement = loan.movements.find(
+    (movement) =>
+      !movement.isReversal &&
+      !movement.reversedAt &&
+      (movement.type === "LOAN_OUT" || movement.type === "LOAN_IN")
+  );
+
+  if (mainMovement) {
+    try {
+      await reverseMovement(
+        mainMovement.id,
+        input.userId,
+        input.registeredByName
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "CANNOT_REVERSE";
+      if (message === "INSUFFICIENT_STOCK") {
+        throw new Error("INSUFFICIENT_STOCK_FOR_EDIT");
+      }
+      throw error;
+    }
+  }
+
+  await prisma.inventoryMovement.updateMany({
+    where: { loanId },
+    data: { loanId: null },
+  });
+  await prisma.loan.delete({ where: { id: loanId } });
+  return createLoan(input);
 }

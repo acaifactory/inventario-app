@@ -532,14 +532,17 @@ export async function reverseMovement(
       throw new Error("ALREADY_REVERSED");
     }
 
-    const reverseType =
-      original.type === "ENTRY" || original.type === "PURCHASE"
-        ? "EXIT"
-        : original.type === "EXIT"
-          ? "ENTRY"
-          : null;
+    const stockIncreased = [
+      "ENTRY",
+      "PURCHASE",
+      "TRANSFER_IN",
+      "LOAN_IN",
+      "LOAN_RETURN",
+    ].includes(original.type);
 
-    if (!reverseType) throw new Error("CANNOT_REVERSE");
+    const reverseType = stockIncreased ? "EXIT" : "ENTRY";
+
+    if (original.type === "ADJUSTMENT") throw new Error("CANNOT_REVERSE");
 
     const delta = reverseType === "EXIT" ? -original.quantity : original.quantity;
     const { before, after } = await applyStockDelta(
@@ -589,4 +592,70 @@ export async function reverseMovement(
 
     return reversal;
   });
+}
+
+export async function updateInventoryMovement(
+  movementId: string,
+  kind: "entry" | "exit",
+  input: EntryInput | ExitInput
+) {
+  const existing = await prisma.inventoryMovement.findUniqueOrThrow({
+    where: { id: movementId },
+  });
+
+  if (existing.isReversal || existing.reversedAt) {
+    throw new Error("ALREADY_REVERSED");
+  }
+  if (existing.purchaseLineId || existing.type === "PURCHASE") {
+    throw new Error("CANNOT_EDIT_PURCHASE");
+  }
+  if (kind === "entry" && existing.type !== "ENTRY") {
+    throw new Error("CANNOT_EDIT");
+  }
+  if (kind === "exit" && existing.type !== "EXIT") {
+    throw new Error("CANNOT_EDIT");
+  }
+
+  try {
+    await reverseMovement(movementId, input.userId, input.registeredByName);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CANNOT_REVERSE";
+    if (message === "INSUFFICIENT_STOCK") {
+      throw new Error("INSUFFICIENT_STOCK_FOR_EDIT");
+    }
+    throw error;
+  }
+
+  if (kind === "entry") {
+    return recordEntry({ ...(input as EntryInput), type: "ENTRY" });
+  }
+  return recordExit(input as ExitInput);
+}
+
+export async function updateTransfer(transferId: string, input: TransferInput) {
+  const existing = await prisma.transfer.findUniqueOrThrow({
+    where: { id: transferId },
+    include: { movementOut: true, movementIn: true },
+  });
+
+  for (const movement of [existing.movementOut, existing.movementIn]) {
+    if (!movement.reversedAt) {
+      try {
+        await reverseMovement(
+          movement.id,
+          input.userId,
+          input.registeredByName
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "CANNOT_REVERSE";
+        if (message === "INSUFFICIENT_STOCK") {
+          throw new Error("INSUFFICIENT_STOCK_FOR_EDIT");
+        }
+        throw error;
+      }
+    }
+  }
+
+  await prisma.transfer.delete({ where: { id: transferId } });
+  return recordTransfer(input);
 }

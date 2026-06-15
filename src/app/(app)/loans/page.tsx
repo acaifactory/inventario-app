@@ -11,7 +11,13 @@ import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
 import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import { Badge } from "@/components/ui/Badge";
+import { RecordActions } from "@/components/ui/RecordActions";
 import { storeLocationLabel } from "@/lib/stores/default-location";
+import {
+  exportLoanRecord,
+  printLoanRecord,
+  type LoanRecord,
+} from "@/lib/export/movement-documents";
 import {
   contentsPerUnitForSubmit,
   defaultPurchaseUnitForProduct,
@@ -26,22 +32,12 @@ import {
   loanPendingInRegisteredUnit,
 } from "@/lib/utils";
 import { LOAN_STATUS_LABELS } from "@/lib/constants";
+import { X } from "lucide-react";
 
-type Loan = {
-  id: string;
+type Loan = LoanRecord & {
   productId: string;
-  direction: "OUT" | "IN";
-  quantity: number;
   quantityReturned: number;
-  registeredUnit: string | null;
-  registeredQuantity: number | null;
   status: keyof typeof LOAN_STATUS_LABELS;
-  counterpartyName: string;
-  responsibleName: string;
-  registeredByName: string;
-  totalCost: number;
-  product: { name: string; unit: string };
-  location: { name: string; store?: { name: string } | null };
 };
 
 export default function LoansPage() {
@@ -52,6 +48,7 @@ export default function LoansPage() {
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [returnQty, setReturnQty] = useState<
     Record<string, { quantity: string; unit: string; contentsPerUnit: string }>
   >({});
@@ -104,19 +101,21 @@ export default function LoansPage() {
       return;
     }
 
-    const res = await fetch("/api/loans", {
-      method: "POST",
+    const payload = {
+      direction: tab,
+      ...form,
+      quantity: Number(form.quantity),
+      contentsPerUnit: contentsPerUnitForSubmit(
+        selectedProduct,
+        form.unit,
+        form.contentsPerUnit
+      ),
+    };
+
+    const res = await fetch(editingId ? `/api/loans/${editingId}` : "/api/loans", {
+      method: editingId ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        direction: tab,
-        ...form,
-        quantity: Number(form.quantity),
-        contentsPerUnit: contentsPerUnitForSubmit(
-          selectedProduct,
-          form.unit,
-          form.contentsPerUnit
-        ),
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -126,6 +125,7 @@ export default function LoansPage() {
       return;
     }
 
+    setEditingId(null);
     setSelectedProduct(undefined);
     setForm({
       productId: "",
@@ -141,6 +141,45 @@ export default function LoansPage() {
     });
     setLoading(false);
     refresh();
+    document.getElementById("historial-prestamos")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+
+  async function startEdit(loan: Loan) {
+    setLoading(true);
+    setError("");
+    const res = await fetch(`/api/loans/${loan.id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo cargar");
+      setLoading(false);
+      return;
+    }
+
+    const product =
+      products.find((p) => p.id === data.productId) ?? data.product;
+    setSelectedProduct(product);
+    const regQty = data.registeredQuantity ?? data.quantity;
+    const regUnit = data.registeredUnit ?? data.product.unit;
+
+    setEditingId(data.id);
+    setTab(data.direction);
+    setForm({
+      productId: data.productId,
+      storeId: data.location.storeId ?? "",
+      quantity: String(regQty),
+      unit: regUnit,
+      contentsPerUnit: "",
+      counterpartyName: data.counterpartyName,
+      responsibleName: data.responsibleName,
+      registeredByName: data.registeredByName,
+      notes: data.notes ?? "",
+      date: data.date.slice(0, 10),
+    });
+    setLoading(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function submitReturn(loan: Loan) {
@@ -214,6 +253,23 @@ export default function LoansPage() {
       </div>
 
       <Card className="mb-6 max-w-2xl">
+        {editingId ? (
+          <div className="mb-4 flex items-center justify-between rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900">
+            <span>Editando préstamo guardado</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditingId(null);
+                setError("");
+              }}
+            >
+              <X className="h-4 w-4" />
+              Cancelar
+            </Button>
+          </div>
+        ) : null}
         <form onSubmit={createLoan} className="space-y-4">
           <ProductSearch
             value={form.productId}
@@ -308,13 +364,17 @@ export default function LoansPage() {
             </p>
           ) : null}
           <Button type="submit" size="lg" disabled={loading}>
-            Registrar préstamo {tab}
+            {loading
+              ? "Guardando..."
+              : editingId
+                ? "Guardar cambios"
+                : `Registrar préstamo ${tab}`}
           </Button>
         </form>
       </Card>
 
-      <Card>
-        <h3 className="mb-3 font-semibold">Activos — {tab}</h3>
+      <Card id="historial-prestamos">
+        <h3 className="mb-3 font-semibold">Préstamos guardados — {tab}</h3>
         <div className="space-y-3">
           {loans.map((loan) => {
             const pendingRegistered = loanPendingInRegisteredUnit(loan);
@@ -398,6 +458,15 @@ export default function LoansPage() {
                     </div>
                   </div>
                 ) : null}
+                <div className="mt-3">
+                  <RecordActions
+                    onEdit={() => startEdit(loan)}
+                    onPrint={() => printLoanRecord(loan)}
+                    onExport={() => exportLoanRecord(loan)}
+                    editDisabled={loan.quantityReturned > 0}
+                    editDisabledReason="No se puede editar con devoluciones registradas"
+                  />
+                </div>
               </div>
             );
           })}
