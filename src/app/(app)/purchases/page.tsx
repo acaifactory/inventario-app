@@ -41,7 +41,7 @@ type InvoiceRow = {
   date: string;
   totalAmount: number;
   registeredByName: string;
-  supplier: { name: string };
+  supplier?: { name: string };
   lines?: {
     quantity: number;
     unit: string;
@@ -59,7 +59,7 @@ function toExportData(inv: InvoiceRow): InvoiceExportData {
   return {
     invoiceNumber: inv.invoiceNumber,
     date: inv.date,
-    supplier: inv.supplier,
+    supplier: { name: inv.supplier?.name ?? "—" },
     totalAmount: inv.totalAmount,
     lines: (inv.lines ?? []).map((line) => ({
       product: { name: line.product.name },
@@ -279,6 +279,9 @@ export default function PurchasesPage() {
     resetForm();
     setLoading(false);
     refresh();
+    document
+      .getElementById("facturas-guardadas")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   return (
@@ -489,15 +492,27 @@ export default function PurchasesPage() {
         </form>
       </Card>
 
-      <Card>
-        <h3 className="mb-3 font-semibold">Facturas recientes</h3>
+      <Card id="facturas-guardadas">
+        <h3 className="mb-1 font-semibold">Facturas guardadas</h3>
+        <p className="mb-4 text-sm text-slate-500">
+          Después de guardar una factura, aquí verás los botones{" "}
+          <strong>Editar</strong>, <strong>Imprimir</strong> y{" "}
+          <strong>Exportar</strong>.
+        </p>
         <div className="space-y-3 text-sm">
+          {invoices.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-slate-500">
+              Aún no hay facturas. Completa el formulario de arriba y pulsa
+              &quot;Guardar factura&quot; — los botones aparecerán en esta
+              sección.
+            </p>
+          ) : null}
           {invoices.map((inv) => (
-            <div key={inv.id} className="rounded-lg bg-slate-50 px-3 py-3">
+            <div key={inv.id} className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-2 font-medium">
                 <div>
                   <p>
-                    {inv.invoiceNumber} · {inv.supplier.name}
+                    {inv.invoiceNumber} · {inv.supplier?.name ?? "Sin proveedor"}
                   </p>
                   <p className="text-xs font-normal text-slate-500">
                     {formatDate(inv.date)} · {inv.registeredByName}
