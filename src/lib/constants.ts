@@ -130,19 +130,29 @@ export const UNITS = [
 
 ] as const;
 
-/** Unidades de empaque disponibles al registrar una compra (sin factor fijo). */
-export const PURCHASE_PACKAGING_UNITS = [
-  { value: "BOX", label: "Box / Caja" },
-  { value: "BROKEN_CASE", label: "Broken box" },
-  { value: "CASE", label: "Manga" },
-  { value: "PACK", label: "Paquete" },
-  { value: "BAG", label: "Bolsa" },
-  { value: "JAR", label: "Pote" },
-  { value: "LB", label: "Libra" },
-  { value: "OZ", label: "Onza" },
-  { value: "GALLON", label: "Galón" },
-  { value: "UNIT", label: "Each" },
+/** Unidades de empaque usadas en TODA la app (facturas, conteo, transferencias, etc.). */
+export const TRANSACTION_PACKAGING_UNITS = [
+  { value: "BOX", label: "Box / Caja", short: "Box" },
+  { value: "BROKEN_CASE", label: "Broken box", short: "BCP" },
+  { value: "CASE", label: "Manga", short: "Manga" },
+  { value: "PACK", label: "Paquete", short: "Pack" },
+  { value: "BAG", label: "Bolsa", short: "Bolsa" },
+  { value: "JAR", label: "Pote", short: "Pote" },
+  { value: "LB", label: "Libra", short: "Lb" },
+  { value: "OZ", label: "Onza", short: "Oz" },
+  { value: "GALLON", label: "Galón", short: "Gal" },
+  { value: "UNIT", label: "Each", short: "Ea" },
 ] as const;
+
+/** Unidades de empaque disponibles al registrar una compra (sin factor fijo). */
+export const PURCHASE_PACKAGING_UNITS = TRANSACTION_PACKAGING_UNITS.map(
+  ({ value, label }) => ({ value, label })
+);
+
+/** Columnas de conteo físico — mismas unidades que facturas y movimientos. */
+export const PHYSICAL_COUNT_COLUMNS = TRANSACTION_PACKAGING_UNITS.map(
+  ({ value, label, short }) => ({ unit: value, label, short })
+);
 
 
 
@@ -195,15 +205,6 @@ export const LOAN_STATUS_LABELS = {
 } as const;
 
 export const EXPIRY_WARNING_DAYS = 7;
-
-/** Columnas estándar de la hoja de conteo físico (multi-UOM). */
-export const PHYSICAL_COUNT_COLUMNS = [
-  { unit: "LB", label: "Libras", short: "Lb" },
-  { unit: "CASE", label: "Manga", short: "Manga" },
-  { unit: "UNIT", label: "Each", short: "Ea" },
-  { unit: "BROKEN_CASE", label: "Broken box", short: "BCP" },
-  { unit: "BOX", label: "Box", short: "Box" },
-] as const;
 
 export type PhysicalCountUnit =
   (typeof PHYSICAL_COUNT_COLUMNS)[number]["unit"];

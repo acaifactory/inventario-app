@@ -229,11 +229,9 @@ export function PhysicalCountClient() {
         <Card className="max-w-xl">
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Cuenta en <strong>Libras</strong>, <strong>Manga</strong>,{" "}
-              <strong>Each</strong>, <strong>Broken box</strong> o{" "}
-              <strong>Box</strong>. Si el empaque no es la unidad base del
-              producto, indica <strong>cuánto contiene</strong> cada unidad
-              contada (igual que en facturas de compra).
+              Mismas unidades que en facturas y movimientos (Box, Manga, Paquete,
+              Bolsa, Pote, Libra, Each…). Si el empaque no es la unidad base,
+              indica <strong>cuánto contiene</strong> cada unidad contada.
             </p>
             <StoreSearch
               label="Tienda del conteo"
