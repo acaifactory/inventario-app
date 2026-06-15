@@ -4,6 +4,8 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { formatCurrency, formatNumber, getUnitLabel } from "@/lib/utils";
 import { ExportButtons } from "@/components/reports/ExportButtons";
 
+export const dynamic = "force-dynamic";
+
 export default async function ValuationPage() {
   const data = await getValuationSummary();
 
@@ -24,13 +26,19 @@ export default async function ValuationPage() {
     <div>
       <PageHeader
         title="Valorización de inventario"
-        description="Inventario valorizado en unidad base de cada producto (misma lógica que compras y conteo físico)"
+        description="Cantidad en bodega × costo promedio. Compras y entradas suben el total; salidas y préstamos OUT lo bajan. Las transferencias mueven valor entre tiendas (el total empresa se mantiene)."
         action={
           <ExportButtons data={exportData} filename="inventario-valorizado" />
         }
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Card className="sm:col-span-2 lg:col-span-3 border-sky-200 bg-sky-50/60 p-4 text-sm text-sky-950">
+          <strong>Cómo leer el valor:</strong> Compras/entradas ↑ total · Salidas y
+          préstamos OUT ↓ total · Transferencias mueven $ entre tiendas (revisa
+          &quot;Por tienda&quot; — el total empresa no baja porque la mercancía sigue
+          siendo tuya).
+        </Card>
         <Card className="border-violet-200 bg-violet-50/50">
           <p className="text-sm text-slate-500">Food + Packaging (COGS)</p>
           <p className="text-2xl font-bold text-violet-700">
@@ -137,10 +145,15 @@ export default async function ValuationPage() {
           <div className="space-y-2">
             {data.byLocation.map((l) => (
               <div
-                key={l.location}
+                key={`${l.store ?? ""}-${l.location}`}
                 className="flex justify-between rounded-xl bg-slate-50 px-3 py-2"
               >
-                <span>{l.location}</span>
+                <span>
+                  {l.location}
+                  {l.store ? (
+                    <span className="ml-2 text-xs text-slate-500">{l.store}</span>
+                  ) : null}
+                </span>
                 <span className="font-semibold">{formatCurrency(l.value)}</span>
               </div>
             ))}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { updateTransfer } from "@/lib/inventory/movements";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import { prisma } from "@/lib/prisma";
 import {
   mapStoreLocationError,
@@ -81,6 +82,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       include,
     });
 
+    revalidateInventoryViews();
     return NextResponse.json(full);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error";

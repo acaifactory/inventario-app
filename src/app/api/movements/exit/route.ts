@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { recordExit } from "@/lib/inventory/movements";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import {
   mapStoreLocationError,
   resolveLocationId,
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
           : undefined,
     });
 
+    revalidateInventoryViews();
     return NextResponse.json(movement, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error";

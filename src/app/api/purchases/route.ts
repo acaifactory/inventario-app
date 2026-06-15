@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { recordPurchaseInvoice } from "@/lib/inventory/purchases";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import { prisma } from "@/lib/prisma";
 import {
   mapStoreLocationError,
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
       lines: mappedLines,
     });
 
+    revalidateInventoryViews();
     return NextResponse.json(invoice, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error";

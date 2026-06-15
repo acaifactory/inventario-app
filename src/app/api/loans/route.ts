@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { createLoan } from "@/lib/inventory/loans";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import { prisma } from "@/lib/prisma";
 import {
   mapStoreLocationError,
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
           : undefined,
     });
 
+    revalidateInventoryViews();
     return NextResponse.json(loan, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error";

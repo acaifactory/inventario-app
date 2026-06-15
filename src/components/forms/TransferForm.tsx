@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Textarea } from "@/components/ui/Textarea";
@@ -26,6 +27,7 @@ import { formatDate, formatRegisteredQuantity } from "@/lib/utils";
 import { X } from "lucide-react";
 
 export function TransferForm() {
+  const router = useRouter();
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<ProductOption>();
   const [stores, setStores] = useState<StoreOption[]>([]);
@@ -169,6 +171,7 @@ export function TransferForm() {
     resetForm();
     setLoading(false);
     refresh();
+    router.refresh();
     document.getElementById("historial-transferencias")?.scrollIntoView({
       behavior: "smooth",
       block: "start",

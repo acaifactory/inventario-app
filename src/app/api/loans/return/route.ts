@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { returnLoan } from "@/lib/inventory/loans";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import { mapUnitConversionError } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
           : undefined,
     });
 
+    revalidateInventoryViews();
     return NextResponse.json(loan);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error";
