@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth";
 import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { returnLoan } from "@/lib/inventory/loans";
+import { mapUnitConversionError } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +17,10 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
       date: body.date ? new Date(body.date) : undefined,
       unit: body.unit,
+      contentsPerUnit:
+        body.contentsPerUnit != null
+          ? Number(body.contentsPerUnit)
+          : undefined,
     });
 
     return NextResponse.json(loan);
@@ -28,9 +33,7 @@ export async function POST(request: NextRequest) {
             ? "Cantidad excede lo pendiente por devolver"
             : message === "INSUFFICIENT_STOCK"
               ? "Stock insuficiente"
-              : message === "INVALID_UNIT"
-                ? "Unidad no válida para este producto"
-                : message,
+              : mapUnitConversionError(message),
       },
       { status: 400 }
     );

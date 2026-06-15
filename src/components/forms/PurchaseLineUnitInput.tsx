@@ -16,7 +16,8 @@ type Props = {
   quantity: string;
   unit: string;
   contentsPerUnit: string;
-  totalPrice: string;
+  totalPrice?: string;
+  quantityLabel?: string;
   onQuantityChange: (value: string) => void;
   onUnitChange: (value: string) => void;
   onContentsPerUnitChange: (value: string) => void;
@@ -35,11 +36,12 @@ export function PurchaseLineUnitInput({
   quantity,
   unit,
   contentsPerUnit,
-  totalPrice,
+  totalPrice = "",
   onQuantityChange,
   onUnitChange,
   onContentsPerUnitChange,
   required,
+  quantityLabel = "Cantidad comprada",
 }: Props) {
   const unitOptions = getPurchaseUnitOptionsForProduct(product);
   const baseUnit = product?.unit ?? "UNIT";
@@ -62,7 +64,7 @@ export function PurchaseLineUnitInput({
     <div className="space-y-3 sm:col-span-2">
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <Label>Cantidad comprada</Label>
+          <Label>{quantityLabel}</Label>
           <Input
             type="number"
             min="0.01"
@@ -115,8 +117,8 @@ export function PurchaseLineUnitInput({
             </span>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            El sistema convertirá esta compra a la unidad base del producto (
-            {baseLabel}) para calcular inventario y costo.
+            El sistema convertirá a la unidad base del producto ({baseLabel})
+            para actualizar inventario y costos.
           </p>
         </div>
       ) : product ? (
@@ -126,7 +128,7 @@ export function PurchaseLineUnitInput({
         </p>
       ) : null}
 
-      {baseQty > 0 && total > 0 ? (
+      {baseQty > 0 ? (
         <div className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
           {needsConversion && contents > 0 ? (
             <p>

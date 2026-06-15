@@ -1,6 +1,6 @@
-import type { UnitOfMeasure } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getUnitLabel } from "@/lib/utils";
+import type { UnitOfMeasure } from "@prisma/client";
 
 export type ProductUnitOption = {
   unit: UnitOfMeasure;
@@ -74,4 +74,14 @@ export async function ensureBaseProductUnit(productId: string, unit: UnitOfMeasu
     create: { productId, unit, conversionFactor: 1 },
     update: {},
   });
+}
+
+export function assertDynamicConversion(
+  baseUnit: UnitOfMeasure,
+  unit: UnitOfMeasure,
+  contentsPerUnit?: number
+) {
+  if (unit !== baseUnit && (contentsPerUnit == null || contentsPerUnit <= 0)) {
+    throw new Error("MISSING_CONTENTS_PER_UNIT");
+  }
 }

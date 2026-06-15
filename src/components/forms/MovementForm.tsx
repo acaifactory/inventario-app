@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -10,11 +10,14 @@ import { Label } from "@/components/ui/Label";
 import { Card } from "@/components/ui/Card";
 import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch";
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
-import { UnitQuantityInput } from "@/components/forms/UnitQuantityInput";
+import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import { EXIT_REASONS } from "@/lib/constants";
 import {
-  defaultUnitForProduct,
-  getUnitOptionsForProduct,
+  computeBaseQuantityFromLine,
+  contentsPerUnitForSubmit,
+  defaultPurchaseUnitForProduct,
+  onDynamicUnitChange,
+  validateDynamicLineConversion,
 } from "@/lib/product-units-ui";
 import { formatCurrency } from "@/lib/utils";
 
@@ -40,6 +43,7 @@ export function MovementForm({ type }: MovementFormProps) {
     storeId: "",
     quantity: "",
     unit: "UNIT",
+    contentsPerUnit: "",
     unitCost: "",
     exitReason: "SALE",
     supplierId: "",
@@ -48,11 +52,6 @@ export function MovementForm({ type }: MovementFormProps) {
     notes: "",
     date: new Date().toISOString().slice(0, 10),
   });
-
-  const unitOptions = useMemo(
-    () => getUnitOptionsForProduct(selectedProduct),
-    [selectedProduct]
-  );
 
   useEffect(() => {
     Promise.all([
@@ -71,10 +70,34 @@ export function MovementForm({ type }: MovementFormProps) {
       ? Number(form.quantity || 0) * Number(form.unitCost || 0)
       : 0;
 
+  const baseQtyPreview = computeBaseQuantityFromLine(
+    selectedProduct,
+    Number(form.quantity || 0),
+    form.unit,
+    form.contentsPerUnit
+  );
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    const validation = validateDynamicLineConversion(
+      selectedProduct,
+      form.unit,
+      form.contentsPerUnit
+    );
+    if (validation) {
+      setError(validation);
+      setLoading(false);
+      return;
+    }
+
+    const contentsPerUnit = contentsPerUnitForSubmit(
+      selectedProduct,
+      form.unit,
+      form.contentsPerUnit
+    );
 
     const endpoint =
       type === "entry" ? "/api/movements/entry" : "/api/movements/exit";
@@ -85,6 +108,7 @@ export function MovementForm({ type }: MovementFormProps) {
             ...form,
             quantity: Number(form.quantity),
             unitCost: Number(form.unitCost),
+            contentsPerUnit,
             supplierId: form.supplierId || undefined,
             invoiceNumber: form.invoiceNumber || undefined,
             notes: form.notes || undefined,
@@ -94,6 +118,7 @@ export function MovementForm({ type }: MovementFormProps) {
             storeId: form.storeId,
             quantity: Number(form.quantity),
             unit: form.unit,
+            contentsPerUnit,
             exitReason: form.exitReason,
             registeredByName: form.registeredByName,
             notes: form.notes || undefined,
@@ -126,11 +151,12 @@ export function MovementForm({ type }: MovementFormProps) {
               value={form.productId}
               onChange={(id, product) => {
                 setSelectedProduct(product);
-                const defaultUnit = defaultUnitForProduct(product);
+                const defaultUnit = defaultPurchaseUnitForProduct(product);
                 setForm({
                   ...form,
                   productId: id,
                   unit: defaultUnit,
+                  contentsPerUnit: "",
                   unitCost:
                     type === "entry" && product?.averageCost
                       ? String(product.averageCost)
@@ -150,12 +176,25 @@ export function MovementForm({ type }: MovementFormProps) {
             required
           />
 
-          <UnitQuantityInput
+          <PurchaseLineUnitInput
+            product={selectedProduct}
             quantity={form.quantity}
             unit={form.unit}
-            units={unitOptions}
+            contentsPerUnit={form.contentsPerUnit}
+            quantityLabel={
+              type === "entry" ? "Cantidad de entrada" : "Cantidad de salida"
+            }
             onQuantityChange={(quantity) => setForm({ ...form, quantity })}
-            onUnitChange={(unit) => setForm({ ...form, unit })}
+            onUnitChange={(unit) =>
+              setForm({
+                ...form,
+                unit,
+                ...onDynamicUnitChange(selectedProduct, unit),
+              })
+            }
+            onContentsPerUnitChange={(contentsPerUnit) =>
+              setForm({ ...form, contentsPerUnit })
+            }
             required
           />
 
@@ -189,6 +228,11 @@ export function MovementForm({ type }: MovementFormProps) {
               <div>
                 <Label>Costo total</Label>
                 <Input value={formatCurrency(totalCost)} disabled />
+                {baseQtyPreview != null && baseQtyPreview > 0 && totalCost > 0 ? (
+                  <p className="mt-1 text-xs text-violet-600">
+                    ≈ {formatCurrency(totalCost / baseQtyPreview)} / unidad base
+                  </p>
+                ) : null}
               </div>
               <div>
                 <Label>Proveedor</Label>

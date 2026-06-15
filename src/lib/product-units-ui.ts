@@ -111,3 +111,57 @@ export function suggestedContentsPerUnit(
 export function defaultPurchaseUnitForProduct(product?: ProductOption) {
   return product?.unit ?? "UNIT";
 }
+
+/** Cantidad en unidad base a partir de línea con conversión dinámica (UI). */
+export function computeBaseQuantityFromLine(
+  product: ProductOption | undefined,
+  quantity: number,
+  unit: string,
+  contentsPerUnit?: number | string
+): number | null {
+  if (!product || quantity <= 0) return null;
+  if (!purchaseUnitNeedsConversion(product, unit)) return quantity;
+  const factor = Number(contentsPerUnit);
+  if (!factor || factor <= 0) return null;
+  return quantity * factor;
+}
+
+export function contentsPerUnitForSubmit(
+  product: ProductOption | undefined,
+  unit: string,
+  contentsPerUnit: string
+): number | undefined {
+  if (!purchaseUnitNeedsConversion(product, unit)) return undefined;
+  return Number(contentsPerUnit);
+}
+
+export function validateDynamicLineConversion(
+  product: ProductOption | undefined,
+  unit: string,
+  contentsPerUnit: string,
+  lineLabel = "Línea"
+): string | null {
+  if (!product) return null;
+  if (
+    purchaseUnitNeedsConversion(product, unit) &&
+    (!contentsPerUnit || Number(contentsPerUnit) <= 0)
+  ) {
+    return `${lineLabel}: indica cuánto contiene cada ${getUnitLabel(unit)} en ${getUnitLabel(product.unit ?? "UNIT")}.`;
+  }
+  return null;
+}
+
+export function onDynamicUnitChange(
+  product: ProductOption | undefined,
+  unit: string
+): { contentsPerUnit: string } {
+  const needs = purchaseUnitNeedsConversion(product, unit);
+  const suggested = suggestedContentsPerUnit(product, unit);
+  return {
+    contentsPerUnit: needs
+      ? suggested != null
+        ? String(suggested)
+        : ""
+      : "",
+  };
+}

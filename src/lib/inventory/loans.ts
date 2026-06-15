@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { LoanDirection, UnitOfMeasure } from "@prisma/client";
 import { writeAuditLog } from "./audit";
 import { getLocationStock } from "./stock-helpers";
-import { resolveQuantityToBase } from "./units";
+import { resolveQuantityToBase, assertDynamicConversion } from "./units";
 
 type CreateLoanInput = {
   direction: LoanDirection;
@@ -10,6 +10,7 @@ type CreateLoanInput = {
   locationId: string;
   quantity: number;
   unit?: UnitOfMeasure;
+  contentsPerUnit?: number;
   counterpartyName: string;
   responsibleName: string;
   registeredByName: string;
@@ -24,10 +25,13 @@ export async function createLoan(input: CreateLoanInput) {
   const product = await prisma.product.findUniqueOrThrow({
     where: { id: input.productId },
   });
+  const loanUnit = input.unit ?? product.unit;
+  assertDynamicConversion(product.unit, loanUnit, input.contentsPerUnit);
   const resolved = await resolveQuantityToBase(
     input.productId,
-    input.unit ?? product.unit,
-    input.quantity
+    loanUnit,
+    input.quantity,
+    input.contentsPerUnit != null ? { contentsPerUnit: input.contentsPerUnit } : undefined
   );
 
   return prisma.$transaction(async (tx) => {
@@ -153,6 +157,7 @@ type ReturnLoanInput = {
   loanId: string;
   quantity: number;
   unit?: UnitOfMeasure;
+  contentsPerUnit?: number;
   registeredByName: string;
   userId: string;
   notes?: string;
@@ -170,10 +175,18 @@ export async function returnLoan(input: ReturnLoanInput) {
 
     const returnUnit =
       input.unit ?? loan.registeredUnit ?? loan.product.unit;
+    assertDynamicConversion(
+      loan.product.unit,
+      returnUnit,
+      input.contentsPerUnit
+    );
     const resolved = await resolveQuantityToBase(
       loan.productId,
       returnUnit,
-      input.quantity
+      input.quantity,
+      input.contentsPerUnit != null
+        ? { contentsPerUnit: input.contentsPerUnit }
+        : undefined
     );
 
     const pendingBase = loan.quantity - loan.quantityReturned;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -9,10 +9,12 @@ import { Label } from "@/components/ui/Label";
 import { Card } from "@/components/ui/Card";
 import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch";
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
-import { UnitQuantityInput } from "@/components/forms/UnitQuantityInput";
+import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import {
-  defaultUnitForProduct,
-  getUnitOptionsForProduct,
+  contentsPerUnitForSubmit,
+  defaultPurchaseUnitForProduct,
+  onDynamicUnitChange,
+  validateDynamicLineConversion,
 } from "@/lib/product-units-ui";
 
 export function TransferForm() {
@@ -28,17 +30,13 @@ export function TransferForm() {
     toStoreId: "",
     quantity: "",
     unit: "UNIT",
+    contentsPerUnit: "",
     registeredByName: "",
     deliveredByName: "",
     receivedByName: "",
     notes: "",
     date: new Date().toISOString().slice(0, 10),
   });
-
-  const unitOptions = useMemo(
-    () => getUnitOptionsForProduct(selectedProduct),
-    [selectedProduct]
-  );
 
   useEffect(() => {
     Promise.all([
@@ -55,6 +53,17 @@ export function TransferForm() {
     setLoading(true);
     setError("");
 
+    const validation = validateDynamicLineConversion(
+      selectedProduct,
+      form.unit,
+      form.contentsPerUnit
+    );
+    if (validation) {
+      setError(validation);
+      setLoading(false);
+      return;
+    }
+
     if (form.fromStoreId === form.toStoreId) {
       setError("Origen y destino deben ser tiendas diferentes");
       setLoading(false);
@@ -67,6 +76,11 @@ export function TransferForm() {
       body: JSON.stringify({
         ...form,
         quantity: Number(form.quantity),
+        contentsPerUnit: contentsPerUnitForSubmit(
+          selectedProduct,
+          form.unit,
+          form.contentsPerUnit
+        ),
       }),
     });
 
@@ -85,6 +99,7 @@ export function TransferForm() {
       toStoreId: "",
       quantity: "",
       unit: "UNIT",
+      contentsPerUnit: "",
       registeredByName: form.registeredByName,
       deliveredByName: "",
       receivedByName: "",
@@ -106,7 +121,8 @@ export function TransferForm() {
                 setForm({
                   ...form,
                   productId: id,
-                  unit: defaultUnitForProduct(product),
+                  unit: defaultPurchaseUnitForProduct(product),
+                  contentsPerUnit: "",
                 });
               }}
               products={products}
@@ -132,12 +148,24 @@ export function TransferForm() {
             required
           />
 
-          <UnitQuantityInput
+          <PurchaseLineUnitInput
+            product={selectedProduct}
             quantity={form.quantity}
             unit={form.unit}
-            units={unitOptions}
+            contentsPerUnit={form.contentsPerUnit}
+            totalPrice=""
+            quantityLabel="Cantidad a transferir"
             onQuantityChange={(quantity) => setForm({ ...form, quantity })}
-            onUnitChange={(unit) => setForm({ ...form, unit })}
+            onUnitChange={(unit) =>
+              setForm({
+                ...form,
+                unit,
+                ...onDynamicUnitChange(selectedProduct, unit),
+              })
+            }
+            onContentsPerUnitChange={(contentsPerUnit) =>
+              setForm({ ...form, contentsPerUnit })
+            }
             required
           />
 

@@ -461,13 +461,14 @@ model PhysicalCount {
 }
 
 model PhysicalCountItem {
-  id               String  @id @default(cuid())
-  physicalCountId  String
-  productId        String
-  expectedQuantity Float
-  countedUnits     Json?
-  countedQuantity  Float?
-  difference       Float?
+  id                 String  @id @default(cuid())
+  physicalCountId    String
+  productId          String
+  expectedQuantity   Float
+  countedUnits       Json?
+  countedUnitFactors Json?
+  countedQuantity    Float?
+  difference         Float?
 
   physicalCount PhysicalCount @relation(fields: [physicalCountId], references: [id], onDelete: Cascade)
   product       Product       @relation(fields: [productId], references: [id])

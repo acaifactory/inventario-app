@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/Label";
 import { Card } from "@/components/ui/Card";
 import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch";
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
-import { UnitQuantityInput } from "@/components/forms/UnitQuantityInput";
+import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import {
-  conversionFactorForProduct,
-  defaultUnitForProduct,
-  getUnitOptionsForProduct,
+  computeBaseQuantityFromLine,
+  contentsPerUnitForSubmit,
+  defaultPurchaseUnitForProduct,
+  onDynamicUnitChange,
+  validateDynamicLineConversion,
 } from "@/lib/product-units-ui";
 import { formatCurrency, formatNumber, getUnitLabel } from "@/lib/utils";
 
@@ -36,16 +38,12 @@ export function AdjustmentForm() {
     storeId: "",
     countedQuantity: "",
     unit: "UNIT",
+    contentsPerUnit: "",
     reason: "",
     registeredByName: "",
     notes: "",
     date: today(),
   });
-
-  const unitOptions = useMemo(
-    () => getUnitOptionsForProduct(selectedProduct),
-    [selectedProduct]
-  );
 
   useEffect(() => {
     Promise.all([
@@ -66,11 +64,15 @@ export function AdjustmentForm() {
       ?.stocks.find((s) => s.locationId === locationId)?.quantity ?? 0;
 
   const countedBase = useMemo(() => {
-    const qty = Number(form.countedQuantity || 0);
-    if (!qty || !selectedProduct) return 0;
-    const factor = conversionFactorForProduct(selectedProduct, form.unit);
-    return factor != null ? qty * factor : 0;
-  }, [form.countedQuantity, form.unit, selectedProduct]);
+    return (
+      computeBaseQuantityFromLine(
+        selectedProduct,
+        Number(form.countedQuantity || 0),
+        form.unit,
+        form.contentsPerUnit
+      ) ?? 0
+    );
+  }, [form.countedQuantity, form.unit, form.contentsPerUnit, selectedProduct]);
 
   const difference = countedBase - expectedBase;
   const unitCost = selectedProduct?.averageCost ?? 0;
@@ -81,6 +83,17 @@ export function AdjustmentForm() {
     setLoading(true);
     setError("");
 
+    const validation = validateDynamicLineConversion(
+      selectedProduct,
+      form.unit,
+      form.contentsPerUnit
+    );
+    if (validation) {
+      setError(validation);
+      setLoading(false);
+      return;
+    }
+
     const res = await fetch("/api/adjustments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -89,6 +102,11 @@ export function AdjustmentForm() {
         storeId: form.storeId,
         countedQuantity: Number(form.countedQuantity),
         unit: form.unit,
+        contentsPerUnit: contentsPerUnitForSubmit(
+          selectedProduct,
+          form.unit,
+          form.contentsPerUnit
+        ),
         reason: form.reason,
         registeredByName: form.registeredByName,
         notes: form.notes,
@@ -111,6 +129,7 @@ export function AdjustmentForm() {
       storeId: "",
       countedQuantity: "",
       unit: "UNIT",
+      contentsPerUnit: "",
       reason: "",
       registeredByName: form.registeredByName,
       notes: "",
@@ -134,7 +153,8 @@ export function AdjustmentForm() {
                 setForm({
                   ...form,
                   productId: id,
-                  unit: defaultUnitForProduct(product),
+                  unit: defaultPurchaseUnitForProduct(product),
+                  contentsPerUnit: "",
                 });
               }}
               products={products}
@@ -162,22 +182,29 @@ export function AdjustmentForm() {
 
           <div>
             <Label>Esperado (sistema)</Label>
-            <Input
-              value={formatNumber(expectedBase)}
-              disabled
-            />
+            <Input value={formatNumber(expectedBase)} disabled />
             <p className="mt-1 text-xs text-slate-500">{baseLabel}</p>
           </div>
 
-          <UnitQuantityInput
-            quantityLabel="Cantidad contada"
+          <PurchaseLineUnitInput
+            product={selectedProduct}
             quantity={form.countedQuantity}
             unit={form.unit}
-            units={unitOptions}
+            contentsPerUnit={form.contentsPerUnit}
+            quantityLabel="Cantidad contada"
             onQuantityChange={(countedQuantity) =>
               setForm({ ...form, countedQuantity })
             }
-            onUnitChange={(unit) => setForm({ ...form, unit })}
+            onUnitChange={(unit) =>
+              setForm({
+                ...form,
+                unit,
+                ...onDynamicUnitChange(selectedProduct, unit),
+              })
+            }
+            onContentsPerUnitChange={(contentsPerUnit) =>
+              setForm({ ...form, contentsPerUnit })
+            }
             required
           />
 

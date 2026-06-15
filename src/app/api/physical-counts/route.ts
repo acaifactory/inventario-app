@@ -6,7 +6,9 @@ import {
   computePhysicalCountDifference,
   computePhysicalCountResult,
   parseCountedUnits,
+  parseUnitFactors,
   serializeCountedUnits,
+  serializeUnitFactors,
 } from "@/lib/inventory/physical-count";
 import { resolveLocationId } from "@/lib/stores/resolve-transfer-locations";
 
@@ -18,6 +20,7 @@ const productInclude = {
 function itemPayload(
   expectedQuantity: number,
   countedUnitsRaw: unknown,
+  countedUnitFactorsRaw: unknown,
   product: {
     unit: import("@prisma/client").UnitOfMeasure;
     units: {
@@ -28,11 +31,17 @@ function itemPayload(
   }
 ) {
   const countedUnits = parseCountedUnits(countedUnitsRaw);
-  const result = computePhysicalCountResult(product, countedUnits);
+  const countedUnitFactors = parseUnitFactors(countedUnitFactorsRaw);
+  const result = computePhysicalCountResult(
+    product,
+    countedUnits,
+    countedUnitFactors
+  );
   const countedQuantity = result.total;
 
   return {
     countedUnits: serializeCountedUnits(countedUnits),
+    countedUnitFactors: serializeUnitFactors(countedUnitFactors),
     countedQuantity,
     difference: computePhysicalCountDifference(
       expectedQuantity,
@@ -110,6 +119,7 @@ export async function POST(request: NextRequest) {
         const payload = itemPayload(
           row.expectedQuantity,
           item.countedUnits,
+          item.countedUnitFactors,
           row.product
         );
 
@@ -146,11 +156,16 @@ export async function POST(request: NextRequest) {
 
       for (const item of count.items) {
         const counts = parseCountedUnits(item.countedUnits);
-        const result = computePhysicalCountResult(item.product, counts);
+        const factors = parseUnitFactors(item.countedUnitFactors);
+        const result = computePhysicalCountResult(
+          item.product,
+          counts,
+          factors
+        );
         if (result.missingUnits.length > 0) {
           return NextResponse.json(
             {
-              error: `Faltan conversiones de unidad en ${item.product.name} (${result.missingUnits.join(", ")}). Configúralas en el producto.`,
+              error: `En ${item.product.name}: indica cuánto contiene cada unidad contada (${result.missingUnits.join(", ")}) en la unidad base del producto.`,
             },
             { status: 400 }
           );

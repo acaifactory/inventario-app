@@ -30,6 +30,19 @@ export function formatDateTime(date: Date | string) {
   return format(new Date(date), "dd MMM yyyy HH:mm", { locale: es });
 }
 
+export function mapUnitConversionError(message: string, fallback?: string) {
+  if (message === "MISSING_CONTENTS_PER_UNIT") {
+    return "Indica cuánto contiene cada unidad recibida";
+  }
+  if (message === "INVALID_CONTENTS_PER_UNIT") {
+    return "La cantidad contenida debe ser mayor que cero";
+  }
+  if (message === "INVALID_UNIT") {
+    return "Unidad no válida para este producto";
+  }
+  return fallback ?? message;
+}
+
 export function getUnitLabel(unit: string) {
   return UNITS.find((u) => u.value === unit)?.label ?? unit;
 }

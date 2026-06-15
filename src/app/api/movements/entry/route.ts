@@ -6,6 +6,7 @@ import {
   mapStoreLocationError,
   resolveLocationId,
 } from "@/lib/stores/resolve-transfer-locations";
+import { mapUnitConversionError } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   try {
@@ -30,6 +31,10 @@ export async function POST(request: NextRequest) {
       date: body.date ? new Date(body.date) : undefined,
       unit: body.unit,
       lineTotal: body.lineTotal != null ? Number(body.lineTotal) : undefined,
+      contentsPerUnit:
+        body.contentsPerUnit != null
+          ? Number(body.contentsPerUnit)
+          : undefined,
     });
 
     return NextResponse.json(movement, { status: 201 });
@@ -38,10 +43,7 @@ export async function POST(request: NextRequest) {
     const status = message === "UNAUTHORIZED" ? 401 : 400;
     return NextResponse.json(
       {
-        error:
-          message === "INVALID_UNIT"
-            ? "Unidad no válida para este producto"
-            : mapStoreLocationError(message),
+        error: mapUnitConversionError(message, mapStoreLocationError(message)),
       },
       { status }
     );

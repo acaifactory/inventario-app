@@ -3,13 +3,14 @@ import type { ExitReason, Prisma, UnitOfMeasure } from "@prisma/client";
 import { writeAuditLog } from "./audit";
 import { recalculateProductAverageCost } from "./cost-average";
 import { getLocationStock } from "./stock-helpers";
-import { resolveQuantityToBase } from "./units";
+import { resolveQuantityToBase, assertDynamicConversion } from "./units";
 
 interface BaseInput {
   registeredByName: string;
   notes?: string;
   date?: Date;
   unit?: UnitOfMeasure;
+  contentsPerUnit?: number;
 }
 
 interface EntryInput extends BaseInput {
@@ -98,9 +99,11 @@ export async function recordEntry(input: EntryInput) {
   const product = await prisma.product.findUniqueOrThrow({
     where: { id: productId },
   });
+  const purchaseUnit = inputUnit ?? product.unit;
+  assertDynamicConversion(product.unit, purchaseUnit, contentsPerUnit);
   const resolved = await resolveQuantityToBase(
     productId,
-    inputUnit ?? product.unit,
+    purchaseUnit,
     quantity,
     contentsPerUnit != null ? { contentsPerUnit } : undefined
   );
@@ -186,6 +189,7 @@ export async function recordExit(input: ExitInput) {
     notes,
     date = new Date(),
     unit: inputUnit,
+    contentsPerUnit,
   } = input;
 
   if (quantity <= 0) throw new Error("INVALID_QUANTITY");
@@ -193,10 +197,13 @@ export async function recordExit(input: ExitInput) {
   const product = await prisma.product.findUniqueOrThrow({
     where: { id: productId },
   });
+  const purchaseUnit = inputUnit ?? product.unit;
+  assertDynamicConversion(product.unit, purchaseUnit, contentsPerUnit);
   const resolved = await resolveQuantityToBase(
     productId,
-    inputUnit ?? product.unit,
-    quantity
+    purchaseUnit,
+    quantity,
+    contentsPerUnit != null ? { contentsPerUnit } : undefined
   );
 
   return prisma.$transaction(async (tx) => {
@@ -264,6 +271,7 @@ export async function recordTransfer(input: TransferInput) {
     notes,
     date = new Date(),
     unit: inputUnit,
+    contentsPerUnit,
   } = input;
 
   if (quantity <= 0) throw new Error("INVALID_QUANTITY");
@@ -272,10 +280,13 @@ export async function recordTransfer(input: TransferInput) {
   const product = await prisma.product.findUniqueOrThrow({
     where: { id: productId },
   });
+  const transferUnit = inputUnit ?? product.unit;
+  assertDynamicConversion(product.unit, transferUnit, contentsPerUnit);
   const resolved = await resolveQuantityToBase(
     productId,
-    inputUnit ?? product.unit,
-    quantity
+    transferUnit,
+    quantity,
+    contentsPerUnit != null ? { contentsPerUnit } : undefined
   );
 
   return prisma.$transaction(async (tx) => {
@@ -388,16 +399,30 @@ export async function recordAdjustment(input: AdjustmentInput) {
     physicalCountId,
     date = new Date(),
     unit: inputUnit,
+    contentsPerUnit,
   } = input;
 
   const product = await prisma.product.findUniqueOrThrow({
     where: { id: productId },
   });
-  const resolved = await resolveQuantityToBase(
-    productId,
-    inputUnit ?? product.unit,
-    countedQuantity
-  );
+
+  const adjustmentUnit = inputUnit ?? product.unit;
+  let resolved;
+  if (physicalCountId) {
+    resolved = await resolveQuantityToBase(
+      productId,
+      product.unit,
+      countedQuantity
+    );
+  } else {
+    assertDynamicConversion(product.unit, adjustmentUnit, contentsPerUnit);
+    resolved = await resolveQuantityToBase(
+      productId,
+      adjustmentUnit,
+      countedQuantity,
+      contentsPerUnit != null ? { contentsPerUnit } : undefined
+    );
+  }
   const countedBase = resolved.baseQuantity;
 
   return prisma.$transaction(async (tx) => {

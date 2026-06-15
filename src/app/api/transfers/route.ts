@@ -4,6 +4,7 @@ import { requireRegisteredByName } from "@/lib/inventory/audit";
 import { recordTransfer } from "@/lib/inventory/movements";
 import { prisma } from "@/lib/prisma";
 import { resolveTransferLocationIds, mapStoreLocationError } from "@/lib/stores/resolve-transfer-locations";
+import { mapUnitConversionError } from "@/lib/utils";
 
 export async function GET() {
   const transfers = await prisma.transfer.findMany({
@@ -43,6 +44,10 @@ export async function POST(request: NextRequest) {
       notes: body.notes,
       date: body.date ? new Date(body.date) : undefined,
       unit: body.unit,
+      contentsPerUnit:
+        body.contentsPerUnit != null
+          ? Number(body.contentsPerUnit)
+          : undefined,
     });
 
     return NextResponse.json(transfer, { status: 201 });
@@ -56,8 +61,8 @@ export async function POST(request: NextRequest) {
             : message === "SAME_LOCATION" || message === "SAME_STORE"
               ? "Origen y destino deben ser tiendas diferentes"
               : message === "INVALID_UNIT"
-                ? "Unidad no válida para este producto"
-                : mapStoreLocationError(message),
+                ? mapUnitConversionError(message)
+                : mapUnitConversionError(message, mapStoreLocationError(message)),
       },
       { status: 400 }
     );

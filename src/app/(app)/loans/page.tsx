@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -9,13 +9,14 @@ import { Label } from "@/components/ui/Label";
 import { Textarea } from "@/components/ui/Textarea";
 import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch";
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
-import { UnitQuantityInput } from "@/components/forms/UnitQuantityInput";
+import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import { Badge } from "@/components/ui/Badge";
 import { storeLocationLabel } from "@/lib/stores/default-location";
 import {
-  defaultUnitForProduct,
-  convertBaseToUnit,
-  getUnitOptionsForProduct,
+  contentsPerUnitForSubmit,
+  defaultPurchaseUnitForProduct,
+  onDynamicUnitChange,
+  validateDynamicLineConversion,
 } from "@/lib/product-units-ui";
 import {
   formatCurrency,
@@ -52,24 +53,20 @@ export default function LoansPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [returnQty, setReturnQty] = useState<
-    Record<string, { quantity: string; unit: string }>
+    Record<string, { quantity: string; unit: string; contentsPerUnit: string }>
   >({});
   const [form, setForm] = useState({
     productId: "",
     storeId: "",
     quantity: "",
     unit: "UNIT",
+    contentsPerUnit: "",
     counterpartyName: "",
     responsibleName: "",
     registeredByName: "",
     notes: "",
     date: new Date().toISOString().slice(0, 10),
   });
-
-  const unitOptions = useMemo(
-    () => getUnitOptionsForProduct(selectedProduct),
-    [selectedProduct]
-  );
 
   function refresh(direction = tab) {
     fetch(`/api/loans?direction=${direction}`)
@@ -96,6 +93,17 @@ export default function LoansPage() {
     setLoading(true);
     setError("");
 
+    const validation = validateDynamicLineConversion(
+      selectedProduct,
+      form.unit,
+      form.contentsPerUnit
+    );
+    if (validation) {
+      setError(validation);
+      setLoading(false);
+      return;
+    }
+
     const res = await fetch("/api/loans", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -103,6 +111,11 @@ export default function LoansPage() {
         direction: tab,
         ...form,
         quantity: Number(form.quantity),
+        contentsPerUnit: contentsPerUnitForSubmit(
+          selectedProduct,
+          form.unit,
+          form.contentsPerUnit
+        ),
       }),
     });
 
@@ -119,6 +132,7 @@ export default function LoansPage() {
       storeId: "",
       quantity: "",
       unit: "UNIT",
+      contentsPerUnit: "",
       counterpartyName: "",
       responsibleName: "",
       registeredByName: form.registeredByName,
@@ -134,13 +148,30 @@ export default function LoansPage() {
     const qty = Number(entry?.quantity);
     if (!qty) return;
 
+    const loanProduct = products.find((p) => p.id === loan.productId);
+    const returnUnit = entry?.unit ?? loan.registeredUnit ?? loan.product.unit;
+    const validation = validateDynamicLineConversion(
+      loanProduct,
+      returnUnit,
+      entry?.contentsPerUnit ?? ""
+    );
+    if (validation) {
+      setError(validation);
+      return;
+    }
+
     const res = await fetch("/api/loans/return", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         loanId: loan.id,
         quantity: qty,
-        unit: entry?.unit ?? loan.registeredUnit ?? loan.product.unit,
+        unit: returnUnit,
+        contentsPerUnit: contentsPerUnitForSubmit(
+          loanProduct,
+          returnUnit,
+          entry?.contentsPerUnit ?? ""
+        ),
         registeredByName: form.registeredByName || "Operador",
       }),
     });
@@ -151,7 +182,10 @@ export default function LoansPage() {
       return;
     }
 
-    setReturnQty({ ...returnQty, [loan.id]: { quantity: "", unit: entry?.unit ?? "UNIT" } });
+    setReturnQty({
+      ...returnQty,
+      [loan.id]: { quantity: "", unit: returnUnit, contentsPerUnit: "" },
+    });
     refresh();
   }
 
@@ -188,7 +222,8 @@ export default function LoansPage() {
               setForm({
                 ...form,
                 productId: id,
-                unit: defaultUnitForProduct(product),
+                unit: defaultPurchaseUnitForProduct(product),
+                contentsPerUnit: "",
               });
             }}
             products={products}
@@ -203,12 +238,23 @@ export default function LoansPage() {
               required
             />
 
-            <UnitQuantityInput
+            <PurchaseLineUnitInput
+              product={selectedProduct}
               quantity={form.quantity}
               unit={form.unit}
-              units={unitOptions}
+              contentsPerUnit={form.contentsPerUnit}
+              quantityLabel="Cantidad del préstamo"
               onQuantityChange={(quantity) => setForm({ ...form, quantity })}
-              onUnitChange={(unit) => setForm({ ...form, unit })}
+              onUnitChange={(unit) =>
+                setForm({
+                  ...form,
+                  unit,
+                  ...onDynamicUnitChange(selectedProduct, unit),
+                })
+              }
+              onContentsPerUnitChange={(contentsPerUnit) =>
+                setForm({ ...form, contentsPerUnit })
+              }
               required
             />
 
@@ -274,10 +320,10 @@ export default function LoansPage() {
             const pendingRegistered = loanPendingInRegisteredUnit(loan);
             const loanUnit = loan.registeredUnit ?? loan.product.unit;
             const loanProduct = products.find((p) => p.id === loan.productId);
-            const returnUnitOptions = getUnitOptionsForProduct(loanProduct);
             const returnEntry = returnQty[loan.id] ?? {
               quantity: "",
               unit: loanUnit,
+              contentsPerUnit: "",
             };
 
             return (
@@ -312,22 +358,12 @@ export default function LoansPage() {
                 </p>
                 {pendingRegistered > 0 ? (
                   <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                    <UnitQuantityInput
+                    <PurchaseLineUnitInput
+                      product={loanProduct}
                       quantity={returnEntry.quantity}
                       unit={returnEntry.unit}
-                      units={returnUnitOptions}
-                      quantityLabel={`Devolver (máx. ${(() => {
-                        const pendingBase =
-                          loan.quantity - loan.quantityReturned;
-                        const maxInUnit = convertBaseToUnit(
-                          pendingBase,
-                          loanProduct,
-                          returnEntry.unit
-                        );
-                        return maxInUnit != null
-                          ? formatNumber(maxInUnit, 2)
-                          : formatNumber(pendingRegistered, 2);
-                      })()} ${getUnitLabel(returnEntry.unit)})`}
+                      contentsPerUnit={returnEntry.contentsPerUnit}
+                      quantityLabel="Cantidad a devolver"
                       onQuantityChange={(quantity) =>
                         setReturnQty({
                           ...returnQty,
@@ -337,7 +373,17 @@ export default function LoansPage() {
                       onUnitChange={(unit) =>
                         setReturnQty({
                           ...returnQty,
-                          [loan.id]: { quantity: returnEntry.quantity, unit },
+                          [loan.id]: {
+                            ...returnEntry,
+                            unit,
+                            ...onDynamicUnitChange(loanProduct, unit),
+                          },
+                        })
+                      }
+                      onContentsPerUnitChange={(contentsPerUnit) =>
+                        setReturnQty({
+                          ...returnQty,
+                          [loan.id]: { ...returnEntry, contentsPerUnit },
                         })
                       }
                     />

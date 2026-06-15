@@ -7,6 +7,7 @@ import {
   mapStoreLocationError,
   resolveLocationId,
 } from "@/lib/stores/resolve-transfer-locations";
+import { mapUnitConversionError } from "@/lib/utils";
 
 export async function GET() {
   const adjustments = await prisma.inventoryAdjustment.findMany({
@@ -36,6 +37,10 @@ export async function POST(request: NextRequest) {
       locationId,
       countedQuantity: Number(body.countedQuantity),
       unit: body.unit,
+      contentsPerUnit:
+        body.contentsPerUnit != null
+          ? Number(body.contentsPerUnit)
+          : undefined,
       reason: body.reason,
       userId: session.id,
       registeredByName: requireRegisteredByName(body.registeredByName),
@@ -49,10 +54,7 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "Error";
     return NextResponse.json(
       {
-        error:
-          message === "INVALID_UNIT"
-            ? "Unidad no válida para este producto"
-            : mapStoreLocationError(message),
+        error: mapUnitConversionError(message, mapStoreLocationError(message)),
       },
       { status: 400 }
     );

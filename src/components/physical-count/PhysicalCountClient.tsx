@@ -15,11 +15,15 @@ import {
   computePhysicalCountDifference,
   computePhysicalCountResult,
   columnLabel,
+  countUnitNeedsFactorInput,
   inventoryLineValue,
-  isCountUnitConfigured,
   parseCountedUnits,
+  parseUnitFactors,
+  suggestedFactorForCountUnit,
   updateCountedUnit,
+  updateUnitFactor,
   type CountedUnitsMap,
+  type UnitFactorsMap,
 } from "@/lib/inventory/physical-count";
 import { formatNumber, getUnitLabel, formatCurrency } from "@/lib/utils";
 import type { UnitOfMeasure } from "@prisma/client";
@@ -28,6 +32,7 @@ interface CountItem {
   id: string;
   expectedQuantity: number;
   countedUnits: unknown;
+  countedUnitFactors: unknown;
   countedQuantity: number | null;
   difference: number | null;
   product: {
@@ -53,14 +58,21 @@ interface PhysicalCount {
 
 function itemWithTotals(item: CountItem): CountItem & {
   unitCounts: CountedUnitsMap;
+  unitFactors: UnitFactorsMap;
   missingUnits: PhysicalCountUnit[];
 } {
   const unitCounts = parseCountedUnits(item.countedUnits);
-  const result = computePhysicalCountResult(item.product, unitCounts);
+  const unitFactors = parseUnitFactors(item.countedUnitFactors);
+  const result = computePhysicalCountResult(
+    item.product,
+    unitCounts,
+    unitFactors
+  );
   const countedQuantity = result.total;
   return {
     ...item,
     unitCounts,
+    unitFactors,
     missingUnits: result.missingUnits,
     countedQuantity,
     difference: computePhysicalCountDifference(
@@ -111,6 +123,7 @@ export function PhysicalCountClient() {
         items: count.items.map((i) => ({
           id: i.id,
           countedUnits: parseCountedUnits(i.countedUnits),
+          countedUnitFactors: parseUnitFactors(i.countedUnitFactors),
         })),
       }),
     });
@@ -142,7 +155,6 @@ export function PhysicalCountClient() {
 
   function updateItemUnit(id: string, unit: PhysicalCountUnit, value: string) {
     if (!count) return;
-
     setCount({
       ...count,
       items: count.items.map((item) => {
@@ -152,7 +164,49 @@ export function PhysicalCountClient() {
           unit,
           value
         );
-        return itemWithTotals({ ...item, countedUnits: unitCounts });
+        let unitFactors = parseUnitFactors(item.countedUnitFactors);
+        if (value === "" || Number(value) <= 0) {
+          const nextFactors = { ...unitFactors };
+          delete nextFactors[unit];
+          unitFactors = nextFactors;
+        } else if (
+          countUnitNeedsFactorInput(item.product, unit) &&
+          unitFactors[unit] == null
+        ) {
+          const suggested = suggestedFactorForCountUnit(item.product, unit);
+          if (suggested != null) {
+            unitFactors = { ...unitFactors, [unit]: suggested };
+          }
+        }
+        return itemWithTotals({
+          ...item,
+          countedUnits: unitCounts,
+          countedUnitFactors: unitFactors,
+        });
+      }),
+    });
+  }
+
+  function updateItemFactor(
+    id: string,
+    unit: PhysicalCountUnit,
+    value: string
+  ) {
+    if (!count) return;
+    setCount({
+      ...count,
+      items: count.items.map((item) => {
+        if (item.id !== id) return item;
+        const unitFactors = updateUnitFactor(
+          parseUnitFactors(item.countedUnitFactors),
+          item.product,
+          unit,
+          value
+        );
+        return itemWithTotals({
+          ...item,
+          countedUnitFactors: unitFactors,
+        });
       }),
     });
   }
@@ -177,12 +231,9 @@ export function PhysicalCountClient() {
             <p className="text-sm text-slate-600">
               Cuenta en <strong>Libras</strong>, <strong>Manga</strong>,{" "}
               <strong>Each</strong>, <strong>Broken box</strong> o{" "}
-              <strong>Box</strong>. Cada producto debe tener esas conversiones
-              configuradas en{" "}
-              <Link href="/products" className="font-medium text-violet-600">
-                Productos → Configurar UOM
-              </Link>
-              .
+              <strong>Box</strong>. Si el empaque no es la unidad base del
+              producto, indica <strong>cuánto contiene</strong> cada unidad
+              contada (igual que en facturas de compra).
             </p>
             <StoreSearch
               label="Tienda del conteo"
@@ -238,7 +289,7 @@ export function PhysicalCountClient() {
                       {PHYSICAL_COUNT_COLUMNS.map((col) => (
                         <th
                           key={col.unit}
-                          className="min-w-[88px] px-2 py-2 font-medium"
+                          className="min-w-[100px] px-2 py-2 font-medium"
                         >
                           {col.label}
                         </th>
@@ -285,22 +336,15 @@ export function PhysicalCountClient() {
                               {item.product.name}
                             </p>
                             <p className="text-xs text-slate-400">
-                              Base: {baseUnit} ·{" "}
-                              {formatCurrency(unitCost)}/{baseUnit}
+                              Base: {baseUnit} · {formatCurrency(unitCost)}/
+                              {baseUnit}
                             </p>
                             {item.missingUnits.length > 0 ? (
                               <p className="mt-1 text-xs text-amber-700">
-                                Sin conversión:{" "}
+                                Falta factor en:{" "}
                                 {item.missingUnits
                                   .map((u) => columnLabel(item.product, u))
-                                  .join(", ")}{" "}
-                                ·{" "}
-                                <Link
-                                  href={`/products/${item.product.id}`}
-                                  className="text-violet-600 hover:underline"
-                                >
-                                  Configurar
-                                </Link>
+                                  .join(", ")}
                               </p>
                             ) : null}
                           </td>
@@ -316,15 +360,14 @@ export function PhysicalCountClient() {
                             ) : null}
                           </td>
                           {PHYSICAL_COUNT_COLUMNS.map((col) => {
-                            const configured = isCountUnitConfigured(
+                            const qty = item.unitCounts[col.unit];
+                            const needsFactor = countUnitNeedsFactorInput(
                               item.product,
                               col.unit
                             );
-                            const factor =
-                              item.product.units?.find(
-                                (u) => u.unit === col.unit
-                              )?.conversionFactor ??
-                              (item.product.unit === col.unit ? 1 : null);
+                            const showFactor =
+                              needsFactor && qty != null && qty > 0;
+                            const colLabel = columnLabel(item.product, col.unit);
 
                             return (
                               <td key={col.unit} className="px-2 py-2">
@@ -332,12 +375,8 @@ export function PhysicalCountClient() {
                                   type="number"
                                   min="0"
                                   step="0.01"
-                                  className={`h-9 min-w-[72px] px-2 text-sm ${
-                                    !configured
-                                      ? "border-amber-200 bg-amber-50/50"
-                                      : ""
-                                  }`}
-                                  value={item.unitCounts[col.unit] ?? ""}
+                                  className="h-9 min-w-[72px] px-2 text-sm"
+                                  value={qty ?? ""}
                                   onChange={(e) =>
                                     updateItemUnit(
                                       item.id,
@@ -347,12 +386,30 @@ export function PhysicalCountClient() {
                                   }
                                   disabled={isCompleted}
                                   placeholder="0"
-                                  title={
-                                    configured && factor != null
-                                      ? `1 ${columnLabel(item.product, col.unit)} = ${factor} ${baseUnit}`
-                                      : `Configura conversión ${col.label} → ${baseUnit} en el producto`
-                                  }
                                 />
+                                {showFactor ? (
+                                  <div className="mt-1 flex items-center gap-1 text-[10px] text-slate-500">
+                                    <span>×</span>
+                                    <Input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      className="h-7 w-14 px-1 text-xs"
+                                      value={item.unitFactors[col.unit] ?? ""}
+                                      onChange={(e) =>
+                                        updateItemFactor(
+                                          item.id,
+                                          col.unit,
+                                          e.target.value
+                                        )
+                                      }
+                                      disabled={isCompleted}
+                                      placeholder="?"
+                                      title={`Cuántas ${baseUnit} contiene cada ${colLabel}`}
+                                    />
+                                    <span>{baseUnit}</span>
+                                  </div>
+                                ) : null}
                               </td>
                             );
                           })}
@@ -386,11 +443,9 @@ export function PhysicalCountClient() {
                                 : "—"}
                           </td>
                           <td className="px-2 py-2 font-medium text-slate-800">
-                            {countedValue != null ? (
-                              formatCurrency(countedValue)
-                            ) : (
-                              "—"
-                            )}
+                            {countedValue != null
+                              ? formatCurrency(countedValue)
+                              : "—"}
                           </td>
                           <td
                             className={`px-2 py-2 font-medium ${
