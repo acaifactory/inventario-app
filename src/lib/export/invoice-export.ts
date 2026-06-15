@@ -36,6 +36,46 @@ export function exportInvoiceSpreadsheet(
 }
 
 export function printInvoicePortrait(invoice: InvoiceExportData) {
+  const html = buildInvoicePrintHtml(invoice);
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute(
+    "title",
+    `Imprimir factura ${invoice.invoiceNumber}`
+  );
+  iframe.style.cssText =
+    "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+  document.body.appendChild(iframe);
+
+  const frameWindow = iframe.contentWindow;
+  const doc = frameWindow?.document;
+  if (!doc || !frameWindow) {
+    iframe.remove();
+    return;
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const cleanup = () => {
+    window.setTimeout(() => iframe.remove(), 500);
+  };
+
+  const triggerPrint = () => {
+    frameWindow.focus();
+    frameWindow.print();
+    frameWindow.addEventListener("afterprint", cleanup, { once: true });
+    window.setTimeout(cleanup, 60_000);
+  };
+
+  if (doc.readyState === "complete") {
+    window.setTimeout(triggerPrint, 150);
+  } else {
+    iframe.onload = () => window.setTimeout(triggerPrint, 150);
+  }
+}
+
+function buildInvoicePrintHtml(invoice: InvoiceExportData) {
   const rows = invoice.lines
     .map(
       (line) =>
@@ -46,7 +86,7 @@ export function printInvoicePortrait(invoice: InvoiceExportData) {
     )
     .join("");
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
@@ -95,22 +135,6 @@ export function printInvoicePortrait(invoice: InvoiceExportData) {
   </table>
 </body>
 </html>`;
-
-  const win = window.open("", "_blank", "noopener,noreferrer");
-  if (!win) return;
-  win.document.open();
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  const triggerPrint = () => {
-    win.print();
-    win.onafterprint = () => win.close();
-  };
-  if (win.document.readyState === "complete") {
-    triggerPrint();
-  } else {
-    win.onload = triggerPrint;
-  }
 }
 
 function escapeHtml(value: string) {
