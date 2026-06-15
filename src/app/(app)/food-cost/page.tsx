@@ -20,6 +20,23 @@ type Metrics = {
   opportunityDollars: number;
 };
 
+type SavedPeriod = Metrics & {
+  id: string;
+  startDate: string;
+  endDate: string;
+  totalSales: number;
+  targetFullCostPercent: number;
+};
+
+function isMetrics(data: unknown): data is Metrics {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    typeof (data as Metrics).costOfSales === "number" &&
+    typeof (data as Metrics).actualFullCostPercent === "number"
+  );
+}
+
 export default function FoodCostPage() {
   const [form, setForm] = useState({
     startDate: "",
@@ -29,16 +46,9 @@ export default function FoodCostPage() {
     responsibleName: "",
   });
   const [metrics, setMetrics] = useState<Metrics | null>(null);
-  const [periods, setPeriods] = useState<
-    (Metrics & {
-      id: string;
-      startDate: string;
-      endDate: string;
-      totalSales: number;
-      targetFullCostPercent: number;
-    })[]
-  >([]);
+  const [periods, setPeriods] = useState<SavedPeriod[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     const end = new Date();
@@ -49,37 +59,108 @@ export default function FoodCostPage() {
       startDate: start.toISOString().slice(0, 10),
       endDate: end.toISOString().slice(0, 10),
     }));
-    fetch("/api/financial-periods")
-      .then((r) => r.json())
-      .then(setPeriods);
+
+    fetch("/api/financial-periods", { cache: "no-store" })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error ?? "No se pudieron cargar períodos");
+        return data;
+      })
+      .then((data) => setPeriods(Array.isArray(data) ? data : []))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : "Error al cargar")
+      );
   }, []);
 
   async function preview() {
     setLoading(true);
-    const res = await fetch("/api/financial-periods", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, preview: true }),
-    });
-    const data = await res.json();
-    setMetrics(data);
-    setLoading(false);
+    setError("");
+    setMetrics(null);
+
+    if (!form.startDate || !form.endDate) {
+      setError("Selecciona fecha inicial y final.");
+      setLoading(false);
+      return;
+    }
+
+    if (form.totalSales.trim() === "") {
+      setError("Indica las ventas totales del período.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/financial-periods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          totalSales: Number(form.totalSales),
+          targetFullCostPercent: Number(form.targetFullCostPercent),
+          preview: true,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo calcular el Full Cost.");
+        return;
+      }
+
+      if (!isMetrics(data)) {
+        setError("Respuesta inválida del servidor.");
+        return;
+      }
+
+      setMetrics(data);
+    } catch {
+      setError(
+        "No se pudo conectar con el servidor. Espera unos segundos e intenta de nuevo."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function savePeriod() {
+    if (!metrics) return;
+
+    if (!form.responsibleName.trim()) {
+      setError("Indica quién es el responsable para guardar el período.");
+      return;
+    }
+
     setLoading(true);
-    const res = await fetch("/api/financial-periods", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (res.ok) {
+    setError("");
+
+    try {
+      const res = await fetch("/api/financial-periods", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          totalSales: Number(form.totalSales),
+          targetFullCostPercent: Number(form.targetFullCostPercent),
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo guardar el período.");
+        return;
+      }
+
       const list = await fetch("/api/financial-periods", {
         cache: "no-store",
       }).then((r) => r.json());
-      setPeriods(list);
+      setPeriods(Array.isArray(list) ? list : []);
+    } catch {
+      setError("Error de conexión al guardar.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   const indicator =
@@ -121,11 +202,12 @@ export default function FoodCostPage() {
             />
           </div>
           <div>
-            <Label>Ventas totales del período</Label>
+            <Label>Ventas totales del período *</Label>
             <Input
               type="number"
               min="0"
               step="0.01"
+              placeholder="Ej. 5000"
               value={form.totalSales}
               onChange={(e) =>
                 setForm({ ...form, totalSales: e.target.value })
@@ -145,19 +227,26 @@ export default function FoodCostPage() {
             />
           </div>
           <div className="sm:col-span-2">
-            <Label>Responsable *</Label>
+            <Label>Responsable (requerido al guardar)</Label>
             <Input
               value={form.responsibleName}
               onChange={(e) =>
                 setForm({ ...form, responsibleName: e.target.value })
               }
-              required
+              placeholder="Tu nombre"
             />
           </div>
         </div>
+
+        {error ? (
+          <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-4 flex flex-wrap gap-2">
           <Button type="button" onClick={preview} disabled={loading}>
-            Calcular
+            {loading ? "Calculando…" : "Calcular"}
           </Button>
           <Button
             type="button"
@@ -232,6 +321,11 @@ export default function FoodCostPage() {
       <Card>
         <h3 className="mb-3 font-semibold">Períodos analizados</h3>
         <div className="space-y-2 text-sm">
+          {periods.length === 0 ? (
+            <p className="text-slate-500">
+              Aún no hay períodos guardados. Calcula y guarda el primero.
+            </p>
+          ) : null}
           {periods.map((p) => (
             <div
               key={p.id}
