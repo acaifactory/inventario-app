@@ -1,5 +1,6 @@
 import type { FinancialClassification } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { inventoryValueAt } from "./inventory-at-date";
 
 const COGS_CLASSES: FinancialClassification[] = [
   "FOOD_COST",
@@ -16,25 +17,16 @@ export type FinancialAnalysisInput = {
   storeId?: string;
 };
 
-async function inventoryValueAt(
-  at: Date,
-  storeId?: string,
-  classifications = COGS_CLASSES
-) {
-  const stocks = await prisma.productStock.findMany({
-    where: {
-      quantity: { gt: 0 },
-      ...(storeId ? { location: { storeId } } : {}),
-      product: {
-        financialClassification: { in: classifications },
-        includeInFoodCost: true,
-      },
-    },
-    include: { product: true },
-  });
+export function startOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
-  void at;
-  return stocks.reduce((sum, s) => sum + s.quantity * s.product.averageCost, 0);
+export function endOfDay(date: Date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
 
 async function sumMovements(
@@ -82,26 +74,43 @@ async function outstandingLoansValue(
 export async function calculateFinancialPeriod(
   input: FinancialAnalysisInput
 ) {
-  const openingInventoryValue = await inventoryValueAt(input.startDate, input.storeId);
-  const closingInventoryValue = await inventoryValueAt(input.endDate, input.storeId);
+  const periodStart = startOfDay(input.startDate);
+  const periodEnd = endOfDay(input.endDate);
+  const productFilter = {
+    classifications: COGS_CLASSES,
+    includeInFoodCost: true,
+  };
+
+  // Inventario justo antes del período (apertura)
+  const openingInventoryValue = await inventoryValueAt(
+    new Date(periodStart.getTime() - 1),
+    input.storeId,
+    productFilter
+  );
+
+  const closingInventoryValue = await inventoryValueAt(
+    periodEnd,
+    input.storeId,
+    productFilter
+  );
 
   const purchasesValue = await sumMovements(
     ["PURCHASE", "ENTRY"],
-    input.startDate,
-    input.endDate,
+    periodStart,
+    periodEnd,
     input.storeId
   );
 
   const loansInValue = await sumMovements(
     ["LOAN_IN"],
-    input.startDate,
-    input.endDate,
+    periodStart,
+    periodEnd,
     input.storeId
   );
 
   const loansOutValue = await outstandingLoansValue(
     "OUT",
-    input.endDate,
+    periodEnd,
     input.storeId
   );
 
@@ -141,8 +150,8 @@ export async function createFinancialPeriod(input: FinancialAnalysisInput) {
 
   return prisma.financialPeriod.create({
     data: {
-      startDate: input.startDate,
-      endDate: input.endDate,
+      startDate: startOfDay(input.startDate),
+      endDate: endOfDay(input.endDate),
       totalSales: input.totalSales,
       targetFullCostPercent: input.targetFullCostPercent,
       responsibleName: input.responsibleName,

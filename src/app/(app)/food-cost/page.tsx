@@ -74,7 +74,9 @@ export default function FoodCostPage() {
       body: JSON.stringify(form),
     });
     if (res.ok) {
-      const list = await fetch("/api/financial-periods").then((r) => r.json());
+      const list = await fetch("/api/financial-periods", {
+        cache: "no-store",
+      }).then((r) => r.json());
       setPeriods(list);
     }
     setLoading(false);
@@ -95,7 +97,7 @@ export default function FoodCostPage() {
     <div>
       <PageHeader
         title="Food Cost y Full Cost"
-        description="Cost of Sales, Full Cost % y oportunidad financiera"
+        description="Cost of Sales = inventario inicial + compras − inventario final. Las salidas de inventario reducen el cierre y suben el costo."
       />
 
       <Card className="mb-6 max-w-2xl">

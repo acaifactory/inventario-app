@@ -8,6 +8,8 @@ import { formatCurrency, formatNumber } from "@/lib/utils";
 import { UNITS, financialClassificationLabel } from "@/lib/constants";
 import { Plus, Settings2 } from "lucide-react";
 
+export const dynamic = "force-dynamic";
+
 function unitLabel(unit: string) {
   return UNITS.find((u) => u.value === unit)?.label ?? unit;
 }

@@ -68,16 +68,19 @@ export function MovementForm({ type }: MovementFormProps) {
   });
 
   function refresh() {
-    fetch(`/api/movements?type=${type}`)
+    fetch(`/api/movements?type=${type}`, { cache: "no-store" })
       .then((r) => r.json())
       .then(setRecords);
+    fetch("/api/products", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setProducts);
   }
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/products").then((r) => r.json()),
-      fetch("/api/stores").then((r) => r.json()),
-      fetch("/api/suppliers").then((r) => r.json()),
+      fetch("/api/products", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/stores", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/suppliers", { cache: "no-store" }).then((r) => r.json()),
     ]).then(([p, s, sup]) => {
       setProducts(p);
       setStores(s);

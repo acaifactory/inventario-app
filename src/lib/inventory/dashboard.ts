@@ -6,16 +6,89 @@ import { addDays, subDays } from "date-fns";
 import { calculateFinancialPeriod } from "./financial-analysis";
 import { formatQtyWithUnit, loanPendingInRegisteredUnit } from "@/lib/utils";
 
-export async function getDashboardData() {
-  const valuation = await getValuationSummary();
-  const usage = await getUsageAnalytics();
+const emptyUsage = {
+  weeklyAvgQuantity: 0,
+  weeklyAvgValue: 0,
+  totalSuggestedCost: 0,
+  urgentCount: 0,
+  purchaseSuggestions: [] as Awaited<
+    ReturnType<typeof getUsageAnalytics>
+  >["purchaseSuggestions"],
+  fastMovers: [] as Awaited<ReturnType<typeof getUsageAnalytics>>["fastMovers"],
+};
 
-  const stocks = await prisma.productStock.findMany({
-    include: {
-      product: { include: { category: true } },
-      location: true,
-    },
-  });
+export async function getDashboardData() {
+  const expiryThreshold = addDays(new Date(), EXPIRY_WARNING_DAYS);
+  const weekStart = subDays(new Date(), 7);
+
+  const [
+    valuation,
+    usageResult,
+    stocks,
+    recentMovements,
+    recentPurchases,
+    pendingLoans,
+    pendingLoansCount,
+    expiringProducts,
+    latestPeriod,
+    admin,
+  ] = await Promise.all([
+    getValuationSummary(),
+    getUsageAnalytics().catch(() => emptyUsage),
+    prisma.productStock.findMany({
+      include: {
+        product: { include: { category: true } },
+        location: true,
+      },
+    }),
+    prisma.inventoryMovement.findMany({
+      take: 8,
+      orderBy: { date: "desc" },
+      include: {
+        product: true,
+        location: true,
+        user: { select: { name: true } },
+      },
+    }),
+    prisma.purchaseInvoice.findMany({
+      take: 5,
+      orderBy: { date: "desc" },
+      include: { supplier: true },
+    }),
+    prisma.loan.findMany({
+      where: { status: { not: "COMPLETE_RETURN" } },
+      include: { product: true },
+      take: 5,
+      orderBy: { date: "desc" },
+    }),
+    prisma.loan.count({
+      where: { status: { not: "COMPLETE_RETURN" } },
+    }),
+    prisma.product.findMany({
+      where: {
+        expirationDate: { lte: expiryThreshold },
+        active: true,
+      },
+      orderBy: { expirationDate: "asc" },
+      take: 5,
+    }),
+    prisma.financialPeriod.findFirst({
+      where: { status: "CLOSED", totalSales: { gt: 0 } },
+      orderBy: { endDate: "desc" },
+    }),
+    prisma.user.findFirst({ where: { role: "ADMIN" } }),
+  ]);
+
+  const financialPreview = admin
+    ? await calculateFinancialPeriod({
+        startDate: weekStart,
+        endDate: new Date(),
+        totalSales: latestPeriod?.totalSales ?? 0,
+        targetFullCostPercent: latestPeriod?.targetFullCostPercent ?? 30,
+        responsibleName: "Dashboard",
+        userId: admin.id,
+      }).catch(() => null)
+    : null;
 
   const lowStock = stocks
     .filter((s) => s.quantity <= s.product.minQuantity)
@@ -30,62 +103,6 @@ export async function getDashboardData() {
     }))
     .sort((a, b) => a.quantity - b.quantity)
     .slice(0, 8);
-
-  const recentMovements = await prisma.inventoryMovement.findMany({
-    take: 8,
-    orderBy: { date: "desc" },
-    include: {
-      product: true,
-      location: true,
-      user: { select: { name: true } },
-    },
-  });
-
-  const recentPurchases = await prisma.purchaseInvoice.findMany({
-    take: 5,
-    orderBy: { date: "desc" },
-    include: { supplier: true },
-  });
-
-  const pendingLoans = await prisma.loan.findMany({
-    where: { status: { not: "COMPLETE_RETURN" } },
-    include: { product: true },
-    take: 5,
-    orderBy: { date: "desc" },
-  });
-
-  const pendingLoansCount = await prisma.loan.count({
-    where: { status: { not: "COMPLETE_RETURN" } },
-  });
-
-  const expiryThreshold = addDays(new Date(), EXPIRY_WARNING_DAYS);
-  const expiringProducts = await prisma.product.findMany({
-    where: {
-      expirationDate: { lte: expiryThreshold },
-      active: true,
-    },
-    orderBy: { expirationDate: "asc" },
-    take: 5,
-  });
-
-  const weekStart = subDays(new Date(), 7);
-  const latestPeriod = await prisma.financialPeriod.findFirst({
-    where: { status: "CLOSED", totalSales: { gt: 0 } },
-    orderBy: { endDate: "desc" },
-  });
-
-  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-
-  const financialPreview = admin
-    ? await calculateFinancialPeriod({
-        startDate: weekStart,
-        endDate: new Date(),
-        totalSales: latestPeriod?.totalSales ?? 0,
-        targetFullCostPercent: latestPeriod?.targetFullCostPercent ?? 30,
-        responsibleName: "Dashboard",
-        userId: admin.id,
-      })
-    : null;
 
   const alerts = [
     ...lowStock.map((i) => ({
@@ -116,7 +133,8 @@ export async function getDashboardData() {
     packagingCostValue: valuation.packagingCostValue,
     byCategory: valuation.byCategory,
     lowStock,
-    lowStockCount: stocks.filter((s) => s.quantity <= s.product.minQuantity).length,
+    lowStockCount: stocks.filter((s) => s.quantity <= s.product.minQuantity)
+      .length,
     recentMovements,
     recentPurchases,
     pendingLoans,
@@ -127,12 +145,12 @@ export async function getDashboardData() {
     financialPreview,
     latestPeriod,
     usage: {
-      weeklyAvgQuantity: usage.weeklyAvgQuantity,
-      weeklyAvgValue: usage.weeklyAvgValue,
-      totalSuggestedCost: usage.totalSuggestedCost,
-      urgentCount: usage.urgentCount,
-      topSuggestions: usage.purchaseSuggestions.slice(0, 3),
+      weeklyAvgQuantity: usageResult.weeklyAvgQuantity,
+      weeklyAvgValue: usageResult.weeklyAvgValue,
+      totalSuggestedCost: usageResult.totalSuggestedCost,
+      urgentCount: usageResult.urgentCount,
+      topSuggestions: usageResult.purchaseSuggestions.slice(0, 3),
     },
-    mostUsed: usage.fastMovers.slice(0, 5),
+    mostUsed: usageResult.fastMovers.slice(0, 5),
   };
 }

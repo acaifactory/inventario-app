@@ -21,7 +21,14 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ user });
-  } catch {
-    return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
+  } catch (err) {
+    console.error("[auth/login]", err);
+    return NextResponse.json(
+      {
+        error:
+          "Error del servidor. Si persiste, la base de datos puede estar iniciando — espera 10 segundos e intenta de nuevo.",
+      },
+      { status: 500 }
+    );
   }
 }

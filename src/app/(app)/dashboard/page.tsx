@@ -66,7 +66,7 @@ export default async function DashboardPage() {
       href: "/food-cost",
     },
     {
-      label: "Food Cost",
+      label: "Food en inventario",
       value: foodCostPct != null ? `${foodCostPct.toFixed(1)}%` : "—",
       icon: TrendingUp,
       color: "text-sky-600 bg-sky-50",

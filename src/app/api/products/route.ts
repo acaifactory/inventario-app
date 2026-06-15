@@ -4,6 +4,8 @@ import { requireSession, canManageCatalog } from "@/lib/auth";
 import { resolveLocationId } from "@/lib/stores/resolve-transfer-locations";
 import { defaultCountUnitsForBase } from "@/lib/catalog/default-count-units";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

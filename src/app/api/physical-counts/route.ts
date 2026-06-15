@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth";
 import { recordAdjustment } from "@/lib/inventory/movements";
+import { revalidateInventoryViews } from "@/lib/inventory/revalidate-views";
 import {
   computePhysicalCountDifference,
   computePhysicalCountResult,
@@ -196,6 +197,7 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      revalidateInventoryViews();
       return NextResponse.json(finalized);
     }
 

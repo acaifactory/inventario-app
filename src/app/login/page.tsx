@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Label } from "@/components/ui/Label";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("admin@acaifactory.com");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
@@ -26,22 +24,35 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccess("");
 
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Error al iniciar sesión");
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(
+          (data as { error?: string }).error ??
+            "No se pudo iniciar sesión. Revisa tus credenciales."
+        );
+        return;
+      }
+
+      // Navegación completa para que la cookie de sesión se aplique de inmediato
+      window.location.assign("/dashboard");
+    } catch {
+      setError(
+        "No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo."
+      );
+    } finally {
       setLoading(false);
-      return;
     }
-
-    router.push("/dashboard");
-    router.refresh();
   }
 
   return (
