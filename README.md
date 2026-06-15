@@ -1,25 +1,46 @@
 # Inventario Açaí Factory
 
-Aplicación web/mobile para control de inventario, movimientos, valorización y reportes — pensada para negocios de alimentos y bebidas (Açaí Factory, frutas, bases, toppings, empaques).
+Aplicación web/mobile para **controlar compras, inventario, uso y food cost** — saber cuánto te cuesta en $ la mercancía que usas para vender en un período (semana, mes, etc.).
+
+**Producción:** https://inventario-app-blond-eight.vercel.app
+
+## Objetivo del negocio
+
+1. **Registrar compras** (facturas con empaque y conversión a unidad base)
+2. **Controlar inventario** (conteo físico, transferencias, valorización)
+3. **Registrar uso** (salidas por venta, desperdicio, etc.)
+4. **Calcular Food Cost** = costo de mercancía usada ÷ ventas del período
+
+## Rutina semanal recomendada
+
+| Día | Acción |
+|-----|--------|
+| Cuando llegan facturas | **Compras** → registrar con unidad y factor |
+| Al preparar/vender | **Salidas** → motivo *Venta* |
+| Fin de semana | **Conteo físico** (opcional pero mejora precisión) |
+| Fin de semana | **Food Cost** → fechas + ventas en $ → *Guardar período analizado* |
+| Revisión | **Uso** y **Dashboard** → consumo y sugerencias de compra |
 
 ## Stack
 
-- **Next.js 16** (App Router) + **TypeScript**
-- **Prisma** + **SQLite** (fácil de migrar a PostgreSQL)
-- **Tailwind CSS** — UI responsive (móvil, tablet, escritorio)
-- **JWT** — autenticación con roles (Admin, Manager, Empleado)
+- **Next.js 16** + **TypeScript** + **Tailwind CSS**
+- **Prisma** + **PostgreSQL** (Neon en producción)
+- **Vercel** (hosting)
+- **JWT** + roles (Admin, Manager, Empleado)
 
-## Funciones
+## Módulos principales
 
-- Dashboard con KPIs, alertas y movimientos recientes
-- Catálogo de productos por categoría y localidad
-- Entradas, salidas, transferencias y ajustes
-- Toma de inventario físico con diferencias
-- Valorización por costo promedio ponderado
-- Reportes filtrables con exportación Excel
-- Historial de movimientos (sin borrado, solo reversión)
+| Módulo | Ruta | Para qué |
+|--------|------|----------|
+| Compras / facturas | `/purchases` | Entrada de mercancía + costo real |
+| Salidas | `/movements/exit` | Uso / venta de producto |
+| Conteo físico | `/physical-count` | Inventario real vs sistema |
+| Uso y consumo | `/usage` | $ y cantidad usada por período |
+| Food Cost | `/food-cost` | Full Cost % vs ventas |
+| Valorización | `/valuation` | Inventario en $ (unidad base) |
+| Reportes | `/reports` | Exportar compras, uso, costos |
 
-## Inicio rápido
+## Inicio local
 
 ```bash
 npm install
@@ -28,47 +49,42 @@ npm run db:seed
 npm run dev
 ```
 
-Abre [http://localhost:3000](http://localhost:3000)
+Abre http://localhost:3000
 
 ### Usuarios demo
 
-| Rol      | Correo                    | Contraseña   |
-|----------|---------------------------|--------------|
-| Admin    | admin@acaifactory.com     | admin123     |
-| Manager  | manager@acaifactory.com   | manager123   |
-| Empleado | empleado@acaifactory.com  | empleado123  |
+| Rol | Correo | Contraseña |
+|-----|--------|------------|
+| Admin | admin@acaifactory.com | admin123 |
+| Manager | manager@acaifactory.com | manager123 |
+| Empleado | empleado@acaifactory.com | empleado123 |
 
-## Estructura
+## Publicar (GitHub + Vercel)
 
+```powershell
+cd c:\Users\onixo\inventario-app
+gh auth login
+.\scripts\publish-github-vercel.ps1
 ```
-src/
-├── app/
-│   ├── (app)/          # Pantallas autenticadas
-│   ├── api/            # API REST
-│   └── login/
-├── components/
-│   ├── layout/         # Sidebar, BottomNav
-│   ├── ui/             # Componentes base
-│   ├── forms/          # Formularios de movimientos
-│   └── reports/
-└── lib/
-    ├── inventory/      # Lógica de stock y valorización
-    ├── auth.ts
-    └── prisma.ts
-```
+
+Repositorio: `https://github.com/acaifactory/inventario-app`
+
+## Variables de entorno (producción)
+
+| Variable | Uso |
+|----------|-----|
+| `DATABASE_URL` | PostgreSQL (Neon) |
+| `JWT_SECRET` | Sesiones |
+| `APP_URL` | URL pública de la app |
+| `RESEND_API_KEY` | Emails (reset contraseña) |
+| `EMAIL_FROM` | Remitente de emails |
 
 ## Reglas de inventario
 
-1. **Entrada** → aumenta stock y actualiza costo promedio
-2. **Salida** → reduce stock
-3. **Transferencia** → descuenta origen, suma destino
-4. **Ajuste** → corrige stock y deja historial
-5. Los movimientos **nunca se borran**; se pueden revertir
+Todas las áreas usan el **mismo idioma de unidades**: cantidad × factor → unidad base del producto.
 
-## Próximos pasos
-
-- Escaneo de código de barras
-- Importación CSV de productos
-- Modo oscuro
-- Backup automático
-- PostgreSQL para producción
+1. **Compra** → aumenta stock y actualiza costo promedio
+2. **Salida** → reduce stock y registra uso en $
+3. **Transferencia** → mueve stock entre tiendas
+4. **Conteo físico** → ajusta diferencias
+5. Los movimientos **no se borran**; se pueden revertir

@@ -1,114 +1,114 @@
-# Acceder sin PC encendida + usar en el celular
+# Despliegue — GitHub + Vercel
 
-Tu app ya está lista para publicarse en internet. Así podrás entrar **24/7** desde el celular, tablet o cualquier computadora.
+## App en producción
+
+**https://inventario-app-blond-eight.vercel.app**
+
+- Cuenta Vercel: `acaifactorypr-8466`
+- Base de datos: Neon (PostgreSQL), conectada vía integración Vercel
+- Login: `admin@acaifactory.com` / `admin123`
 
 ---
 
-## Opción recomendada: Railway (más fácil, gratis para empezar)
+## Primera vez: crear repo en GitHub
 
-Railway mantiene la app encendida en la nube. No necesitas tu computadora.
+En PowerShell, desde la carpeta del proyecto:
 
-### Paso 1 — Subir el código a GitHub
-
-1. Crea cuenta en **https://github.com**
-2. Crea un repositorio nuevo llamado `inventario-app`
-3. En la terminal de tu PC:
-
-```bash
+```powershell
 cd c:\Users\onixo\inventario-app
-git init
-git add .
-git commit -m "Inventario Açaí Factory"
-git branch -M main
-git remote add origin https://github.com/TU-USUARIO/inventario-app.git
+
+# 1. Autenticarse en GitHub (solo una vez)
+gh auth login
+
+# 2. Crear repo y subir código
+gh repo create inventario-app --public --source=. --remote=origin --push
+```
+
+Si el repo ya existe:
+
+```powershell
 git push -u origin main
 ```
 
-(Cambia `TU-USUARIO` por tu usuario de GitHub.)
+**Importante:** el correo de Git en el proyecto debe ser `acaifactorypr@gmail.com` (igual que GitHub) para que Vercel no bloquee deploys:
 
-### Paso 2 — Publicar en Railway
-
-1. Entra a **https://railway.app** y crea cuenta (con GitHub).
-2. **New Project** → **Deploy from GitHub repo** → elige `inventario-app`.
-3. En **Variables**, agrega:
-
-| Variable | Valor |
-|----------|--------|
-| `JWT_SECRET` | Una frase larga secreta (ej: `acai-inventario-secreto-2026`) |
-| `DATABASE_URL` | `file:./data/inventario.db` |
-
-4. En **Settings** del servicio:
-   - **Volume**: monta en `/app/prisma/data` (para que los datos no se borren)
-5. **Settings** → **Networking** → **Generate Domain**
-   - Te dará una URL como: `https://inventario-app-production.up.railway.app`
-
-6. Espera que termine el deploy (3–5 min).
-
-### Paso 3 — Cargar datos iniciales (primera vez)
-
-En Railway, abre la terminal del servicio y ejecuta:
-
-```bash
-npm run db:seed
+```powershell
+git config user.email "acaifactorypr@gmail.com"
+git config user.name "acaifactory"
 ```
 
-O desde tu PC con Railway CLI apuntando al proyecto.
+---
 
-### Paso 4 — Entrar desde el celular
+## Publicar cambios (cada actualización)
 
-1. Abre **Chrome** o **Safari** en el celular.
-2. Ve a tu URL de Railway (la que generaste).
-3. Inicia sesión:
-   - **Correo:** `admin@acaifactory.com`
-   - **Contraseña:** `admin123`
+```powershell
+.\scripts\publish-github-vercel.ps1
+```
 
-### Instalar como app en el celular
+O manualmente:
 
-**Android:** Menú ⋮ → **Instalar aplicación** / **Añadir a inicio**
-
-**iPhone:** Safari → Compartir → **Añadir a inicio**
-
-Tendrás un ícono morado con la letra **A** en tu pantalla, como una app normal.
+```powershell
+git add -A
+git commit -m "Descripcion del cambio"
+git push origin main
+npx vercel deploy --prod --yes
+```
 
 ---
 
-## Opción alternativa: Vercel + Neon (base de datos PostgreSQL)
+## Deploy automático (Git → Vercel)
 
-Si prefieres Vercel:
+Después de tener el repo en GitHub:
 
-1. Crea base de datos gratis en **https://neon.tech**
-2. Cambia en `prisma/schema.prisma` la línea `provider = "sqlite"` por `provider = "postgresql"`
-3. Publica en **https://vercel.com** conectando GitHub
-4. Variables de entorno: `DATABASE_URL` (de Neon) y `JWT_SECRET`
-5. Ejecuta `npm run db:seed` una vez con la URL de Neon
+```powershell
+npx vercel git connect
+```
 
----
+Cada `git push` a `main` desplegará automáticamente en Vercel.
 
-## Resumen: ¿qué logras?
-
-| Antes | Después |
-|-------|---------|
-| Solo funciona con la PC encendida | Funciona **24/7** en la nube |
-| Solo `localhost:3000` | URL pública `https://...` |
-| Abrir navegador en la PC | Abrir desde **cualquier celular** |
-| Pestaña del navegador | **App en pantalla de inicio** |
+Si Vercel muestra **Deployment Blocked**, reconecta GitHub en:
+https://vercel.com/account/settings/authentication
 
 ---
 
-## Uso diario en el móvil
+## Variables de entorno en Vercel
 
-1. Toca el ícono **Inventario** en tu celular
-2. Entra con tu usuario
-3. Usa el menú inferior: **Inicio**, **Uso**, **Productos**, **Entrada**, **Reportes**
+Ya configuradas en el proyecto `inventario-app`:
 
-La interfaz ya está adaptada para pantallas pequeñas.
+| Variable | Requerida |
+|----------|-----------|
+| `DATABASE_URL` | Sí (Neon) |
+| `JWT_SECRET` | Sí |
+| `APP_URL` | Sí → `https://inventario-app-blond-eight.vercel.app` |
+| `RESEND_API_KEY` | Para emails |
+| `EMAIL_FROM` | Para emails |
+
+Ver/editar: https://vercel.com/acaifactorypr-8466s-projects/inventario-app/settings/environment-variables
 
 ---
 
-## ¿Necesitas ayuda?
+## Build en Vercel
 
-Si quieres, en el próximo mensaje dime:
-- Si ya tienes cuenta en GitHub
-- Si prefieres Railway o Vercel
+El `vercel.json` ejecuta en cada deploy:
 
-Y te guío paso a paso en tiempo real.
+1. `prisma generate`
+2. `prisma db push` (sincroniza schema con Neon)
+3. `npm run db:seed` (catálogo y usuarios demo)
+4. `next build`
+
+---
+
+## Usar en el celular
+
+1. Abre https://inventario-app-blond-eight.vercel.app
+2. Inicia sesión
+3. **Añadir a inicio** (Chrome/Safari) para usarla como app
+
+---
+
+## Flujo para alcanzar el objetivo (food cost)
+
+1. **Compras** — facturas con conversión de empaque
+2. **Salidas** — motivo *Venta* al usar mercancía
+3. **Food Cost** — período + ventas en $ → ver Full Cost %
+4. **Uso** — revisar consumo semanal en cantidad y $
