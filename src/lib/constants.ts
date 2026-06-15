@@ -130,6 +130,20 @@ export const UNITS = [
 
 ] as const;
 
+/** Unidades de empaque disponibles al registrar una compra (sin factor fijo). */
+export const PURCHASE_PACKAGING_UNITS = [
+  { value: "BOX", label: "Box / Caja" },
+  { value: "BROKEN_CASE", label: "Broken box" },
+  { value: "CASE", label: "Manga" },
+  { value: "PACK", label: "Paquete" },
+  { value: "BAG", label: "Bolsa" },
+  { value: "JAR", label: "Pote" },
+  { value: "LB", label: "Libra" },
+  { value: "OZ", label: "Onza" },
+  { value: "GALLON", label: "Galón" },
+  { value: "UNIT", label: "Each" },
+] as const;
+
 
 
 export const EXIT_REASONS = [

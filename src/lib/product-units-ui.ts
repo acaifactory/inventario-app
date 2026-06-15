@@ -1,4 +1,5 @@
 import { getUnitLabel } from "@/lib/utils";
+import { PURCHASE_PACKAGING_UNITS } from "@/lib/constants";
 import type { ProductOption } from "@/components/ui/ProductSearch";
 import type { UnitOption } from "@/components/forms/UnitQuantityInput";
 
@@ -54,4 +55,59 @@ export function convertBaseToUnit(
   const factor = conversionFactorForProduct(product, unit);
   if (factor == null || factor === 0) return null;
   return baseQuantity / factor;
+}
+
+export type PurchaseUnitOption = {
+  unit: string;
+  label: string;
+};
+
+/** Unidades de compra universales; el factor se define en cada factura. */
+export function getPurchaseUnitOptionsForProduct(
+  product?: ProductOption
+): PurchaseUnitOption[] {
+  const base = product?.unit ?? "UNIT";
+  const seen = new Set<string>();
+  const options: PurchaseUnitOption[] = [];
+
+  function add(unit: string, label: string) {
+    if (seen.has(unit)) return;
+    seen.add(unit);
+    options.push({ unit, label });
+  }
+
+  add(base, getUnitLabel(base));
+
+  for (const row of PURCHASE_PACKAGING_UNITS) {
+    add(row.value, row.label);
+  }
+
+  return options.sort((a, b) => {
+    if (a.unit === base) return -1;
+    if (b.unit === base) return 1;
+    return a.label.localeCompare(b.label, "es");
+  });
+}
+
+export function purchaseUnitNeedsConversion(
+  product: ProductOption | undefined,
+  unit: string
+) {
+  if (!product?.unit) return false;
+  return unit !== product.unit;
+}
+
+/** Sugerencia opcional desde configuración del producto (editable en la factura). */
+export function suggestedContentsPerUnit(
+  product: ProductOption | undefined,
+  unit: string
+): number | null {
+  if (!product || !purchaseUnitNeedsConversion(product, unit)) return null;
+  const row = product.units?.find((u) => u.unit === unit);
+  if (row && row.conversionFactor > 0) return row.conversionFactor;
+  return null;
+}
+
+export function defaultPurchaseUnitForProduct(product?: ProductOption) {
+  return product?.unit ?? "UNIT";
 }

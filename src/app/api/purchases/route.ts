@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
           quantity: number;
           totalPrice: number;
           unit?: string;
+          contentsPerUnit?: number;
         }) => ({
           productId: line.productId,
           locationId: await resolveLocationId({
@@ -59,6 +60,10 @@ export async function POST(request: NextRequest) {
           quantity: Number(line.quantity),
           totalPrice: Number(line.totalPrice),
           unit: line.unit,
+          contentsPerUnit:
+            line.contentsPerUnit != null
+              ? Number(line.contentsPerUnit)
+              : undefined,
         })
       )
     );
@@ -82,7 +87,11 @@ export async function POST(request: NextRequest) {
         error:
           message === "INVALID_UNIT"
             ? "Unidad no válida para este producto"
-            : mapStoreLocationError(message),
+            : message === "MISSING_CONTENTS_PER_UNIT"
+              ? "Indica cuánto contiene cada unidad de compra"
+              : message === "INVALID_CONTENTS_PER_UNIT"
+                ? "La cantidad contenida debe ser mayor que cero"
+                : mapStoreLocationError(message),
       },
       { status: 400 }
     );

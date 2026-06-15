@@ -320,15 +320,19 @@ model PurchaseInvoice {
 }
 
 model PurchaseInvoiceLine {
-  id         String        @id @default(cuid())
-  invoiceId  String
-  productId  String
-  locationId String
-  quantity   Float
-  unit       UnitOfMeasure
-  totalPrice Float
-  unitCost   Float
-  movementId String?       @unique
+  id               String         @id @default(cuid())
+  invoiceId        String
+  productId        String
+  locationId       String
+  quantity         Float
+  unit             UnitOfMeasure
+  contentsPerUnit  Float?
+  baseUnit         UnitOfMeasure?
+  baseQuantity     Float?
+  baseUnitCost     Float?
+  totalPrice       Float
+  unitCost         Float
+  movementId       String?        @unique
 
   invoice  PurchaseInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   product  Product            @relation(fields: [productId], references: [id])

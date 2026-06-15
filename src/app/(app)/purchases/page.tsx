@@ -10,10 +10,11 @@ import { Label } from "@/components/ui/Label";
 import { Textarea } from "@/components/ui/Textarea";
 import { ProductSearch, type ProductOption } from "@/components/ui/ProductSearch";
 import { StoreSearch, type StoreOption } from "@/components/ui/StoreSearch";
-import { UnitQuantityInput } from "@/components/forms/UnitQuantityInput";
+import { PurchaseLineUnitInput } from "@/components/forms/PurchaseLineUnitInput";
 import {
-  defaultUnitForProduct,
-  getUnitOptionsForProduct,
+  defaultPurchaseUnitForProduct,
+  purchaseUnitNeedsConversion,
+  suggestedContentsPerUnit,
 } from "@/lib/product-units-ui";
 import { formatCurrency, formatQtyWithUnit, getUnitLabel } from "@/lib/utils";
 import { Plus, Trash2 } from "lucide-react";
@@ -23,6 +24,7 @@ type Line = {
   storeId: string;
   quantity: string;
   unit: string;
+  contentsPerUnit: string;
   totalPrice: string;
 };
 
@@ -37,11 +39,26 @@ type InvoiceRow = {
   lines?: {
     quantity: number;
     unit: string;
+    contentsPerUnit: number | null;
+    baseUnit: string | null;
+    baseQuantity: number | null;
+    baseUnitCost: number | null;
     totalPrice: number;
     unitCost: number;
     product: { name: string; unit: string };
   }[];
 };
+
+function emptyLine(): Line {
+  return {
+    productId: "",
+    storeId: "",
+    quantity: "",
+    unit: "UNIT",
+    contentsPerUnit: "",
+    totalPrice: "",
+  };
+}
 
 export default function PurchasesPage() {
   const [products, setProducts] = useState<ProductOption[]>([]);
@@ -60,9 +77,7 @@ export default function PurchasesPage() {
     date: new Date().toISOString().slice(0, 10),
     notes: "",
   });
-  const [lines, setLines] = useState<Line[]>([
-    { productId: "", storeId: "", quantity: "", unit: "UNIT", totalPrice: "" },
-  ]);
+  const [lines, setLines] = useState<Line[]>([emptyLine()]);
 
   function refresh() {
     fetch("/api/purchases")
@@ -94,24 +109,59 @@ export default function PurchasesPage() {
     setLines(next);
   }
 
+  function handleUnitChange(index: number, unit: string, product?: ProductOption) {
+    const needs = purchaseUnitNeedsConversion(product, unit);
+    const suggested = suggestedContentsPerUnit(product, unit);
+    updateLine(index, {
+      unit,
+      contentsPerUnit: needs
+        ? suggested != null
+          ? String(suggested)
+          : ""
+        : "",
+    });
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError("");
+
+    for (let i = 0; i < lines.length; i++) {
+      const product = lineProducts[i];
+      const line = lines[i];
+      if (
+        product &&
+        purchaseUnitNeedsConversion(product, line.unit) &&
+        (!line.contentsPerUnit || Number(line.contentsPerUnit) <= 0)
+      ) {
+        setError(
+          `Línea ${i + 1}: indica cuánto contiene cada ${getUnitLabel(line.unit)} en ${getUnitLabel(product.unit ?? "UNIT")}.`
+        );
+        setLoading(false);
+        return;
+      }
+    }
 
     const res = await fetch("/api/purchases", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...header,
-        lines: lines.map((l) => {
+        lines: lines.map((l, lineIndex) => {
           const store = stores.find((s) => s.id === l.storeId);
+          const product = lineProducts[lineIndex];
+          const needsConversion =
+            product && purchaseUnitNeedsConversion(product, l.unit);
           return {
             productId: l.productId,
             locationId: store?.defaultLocationId,
             storeId: l.storeId,
             quantity: Number(l.quantity),
             unit: l.unit,
+            contentsPerUnit: needsConversion
+              ? Number(l.contentsPerUnit)
+              : undefined,
             totalPrice: Number(l.totalPrice),
           };
         }),
@@ -132,9 +182,7 @@ export default function PurchasesPage() {
       date: new Date().toISOString().slice(0, 10),
       notes: "",
     });
-    setLines([
-      { productId: "", storeId: "", quantity: "", unit: "UNIT", totalPrice: "" },
-    ]);
+    setLines([emptyLine()]);
     setLineProducts({});
     setLoading(false);
     refresh();
@@ -144,7 +192,7 @@ export default function PurchasesPage() {
     <div>
       <PageHeader
         title="Compras y facturas"
-        description="Registra cantidad en la unidad de la factura (box, manga, lb…) — el sistema convierte inventario y costo a unidad base"
+        description="Indica la unidad recibida y, si aplica, cuánto contiene cada empaque. El inventario y costo se calculan en la unidad base del producto."
       />
 
       <Card className="mb-6 max-w-4xl">
@@ -206,9 +254,8 @@ export default function PurchasesPage() {
             </p>
             {lines.map((line, index) => {
               const product = lineProducts[index];
-              const unitOptions = getUnitOptionsForProduct(product);
-              const qty = Number(line.quantity || 0);
               const total = Number(line.totalPrice || 0);
+              const qty = Number(line.quantity || 0);
               const unitLabel = getUnitLabel(line.unit);
 
               return (
@@ -220,9 +267,11 @@ export default function PurchasesPage() {
                     value={line.productId}
                     onChange={(id, p) => {
                       setLineProducts({ ...lineProducts, [index]: p });
+                      const baseUnit = defaultPurchaseUnitForProduct(p);
                       updateLine(index, {
                         productId: id,
-                        unit: defaultUnitForProduct(p),
+                        unit: baseUnit,
+                        contentsPerUnit: "",
                       });
                     }}
                     products={products}
@@ -237,14 +286,21 @@ export default function PurchasesPage() {
                     required
                   />
 
-                  <UnitQuantityInput
+                  <PurchaseLineUnitInput
+                    product={product}
                     quantity={line.quantity}
                     unit={line.unit}
-                    units={unitOptions}
+                    contentsPerUnit={line.contentsPerUnit}
+                    totalPrice={line.totalPrice}
                     onQuantityChange={(quantity) =>
                       updateLine(index, { quantity })
                     }
-                    onUnitChange={(unit) => updateLine(index, { unit })}
+                    onUnitChange={(unit) =>
+                      handleUnitChange(index, unit, product)
+                    }
+                    onContentsPerUnitChange={(contentsPerUnit) =>
+                      updateLine(index, { contentsPerUnit })
+                    }
                     required
                   />
 
@@ -252,7 +308,7 @@ export default function PurchasesPage() {
                     <Label>Precio total de la línea ($) *</Label>
                     <Input
                       type="number"
-                      min="0"
+                      min="0.01"
                       step="0.01"
                       value={line.totalPrice}
                       onChange={(e) =>
@@ -262,14 +318,7 @@ export default function PurchasesPage() {
                     />
                     {qty > 0 && total > 0 ? (
                       <p className="mt-1 text-xs text-slate-500">
-                        {formatCurrency(total / qty)} / {unitLabel} · Total{" "}
-                        {formatCurrency(total)}
-                      </p>
-                    ) : null}
-                    {product && qty > 0 && total > 0 ? (
-                      <p className="mt-0.5 text-xs text-violet-600">
-                        Se convertirá a unidad base ({getUnitLabel(product.unit ?? "UNIT")})
-                        al guardar
+                        {formatCurrency(total / qty)} / {unitLabel} recibido
                       </p>
                     ) : null}
                   </div>
@@ -301,18 +350,7 @@ export default function PurchasesPage() {
             <Button
               type="button"
               variant="secondary"
-              onClick={() =>
-                setLines([
-                  ...lines,
-                  {
-                    productId: "",
-                    storeId: "",
-                    quantity: "",
-                    unit: "UNIT",
-                    totalPrice: "",
-                  },
-                ])
-              }
+              onClick={() => setLines([...lines, emptyLine()])}
             >
               <Plus className="h-4 w-4" />
               Agregar línea
@@ -359,9 +397,25 @@ export default function PurchasesPage() {
               {inv.lines?.slice(0, 3).map((l, i) => (
                 <p key={i} className="mt-1 text-xs text-slate-500">
                   {l.product.name}:{" "}
-                  {formatQtyWithUnit(l.quantity, l.unit)} ={" "}
-                  {formatCurrency(l.totalPrice)} (
-                  {formatCurrency(l.unitCost)}/{getUnitLabel(l.unit)})
+                  {formatQtyWithUnit(l.quantity, l.unit)}
+                  {l.contentsPerUnit != null && l.baseUnit ? (
+                    <>
+                      {" "}
+                      (× {l.contentsPerUnit}{" "}
+                      {getUnitLabel(l.baseUnit)} ={" "}
+                      {formatQtyWithUnit(
+                        l.baseQuantity ?? l.quantity * l.contentsPerUnit,
+                        l.baseUnit
+                      )}
+                      )
+                    </>
+                  ) : null}{" "}
+                  = {formatCurrency(l.totalPrice)}
+                  {l.baseUnitCost != null && l.baseUnit ? (
+                    <> · {formatCurrency(l.baseUnitCost)}/{getUnitLabel(l.baseUnit)}</>
+                  ) : (
+                    <> · {formatCurrency(l.unitCost)}/{getUnitLabel(l.unit)}</>
+                  )}
                 </p>
               ))}
             </div>

@@ -9,6 +9,8 @@ export type PurchaseLineInput = {
   locationId: string;
   quantity: number;
   unit?: UnitOfMeasure;
+  /** Cuántas unidades base contiene cada unidad comprada (solo si unit ≠ unidad base). */
+  contentsPerUnit?: number;
   totalPrice: number;
 };
 
@@ -29,21 +31,39 @@ export async function recordPurchaseInvoice(input: PurchaseInvoiceInput) {
   const resolvedLines = await Promise.all(
     input.lines.map(async (line) => {
       if (line.quantity <= 0) throw new Error("INVALID_QUANTITY");
+      if (line.totalPrice < 0) throw new Error("INVALID_PRICE");
 
       const product = await prisma.product.findUniqueOrThrow({
         where: { id: line.productId },
       });
+      const purchaseUnit = line.unit ?? product.unit;
+
+      if (
+        purchaseUnit !== product.unit &&
+        (line.contentsPerUnit == null || line.contentsPerUnit <= 0)
+      ) {
+        throw new Error("MISSING_CONTENTS_PER_UNIT");
+      }
+
       const resolved = await resolveQuantityToBase(
         line.productId,
-        line.unit ?? product.unit,
-        line.quantity
+        purchaseUnit,
+        line.quantity,
+        purchaseUnit !== product.unit
+          ? { contentsPerUnit: line.contentsPerUnit }
+          : undefined
       );
+
       const registeredUnitCost = line.totalPrice / line.quantity;
-      const baseUnitCost = line.totalPrice / resolved.baseQuantity;
+      const baseUnitCost =
+        resolved.baseQuantity > 0
+          ? line.totalPrice / resolved.baseQuantity
+          : registeredUnitCost;
 
       return {
         ...line,
         product,
+        purchaseUnit,
         resolved,
         registeredUnitCost,
         baseUnitCost,
@@ -81,6 +101,10 @@ export async function recordPurchaseInvoice(input: PurchaseInvoiceInput) {
           locationId: line.locationId,
           quantity: line.resolved.registeredQuantity,
           unit: line.resolved.registeredUnit,
+          contentsPerUnit: line.resolved.contentsPerUnit,
+          baseUnit: line.resolved.baseUnit,
+          baseQuantity: line.resolved.baseQuantity,
+          baseUnitCost: line.baseUnitCost,
           totalPrice: line.totalPrice,
           unitCost: line.registeredUnitCost,
         },
@@ -111,6 +135,7 @@ export async function recordPurchaseInvoice(input: PurchaseInvoiceInput) {
         locationId: line.locationId,
         quantity: line.resolved.registeredQuantity,
         unit: line.resolved.registeredUnit,
+        contentsPerUnit: line.contentsPerUnit,
         unitCost: line.registeredUnitCost,
         lineTotal: line.totalPrice,
         userId: input.userId,

@@ -19,6 +19,8 @@ interface EntryInput extends BaseInput {
   unitCost: number;
   /** Total de la línea (factura). Si se indica, normaliza costo a unidad base. */
   lineTotal?: number;
+  /** Factor de conversión por unidad comprada (compras con empaque variable). */
+  contentsPerUnit?: number;
   userId: string;
   supplierId?: string;
   invoiceNumber?: string;
@@ -88,6 +90,7 @@ export async function recordEntry(input: EntryInput) {
     purchaseLineId,
     unit: inputUnit,
     lineTotal,
+    contentsPerUnit,
   } = input;
 
   if (quantity <= 0) throw new Error("INVALID_QUANTITY");
@@ -98,7 +101,8 @@ export async function recordEntry(input: EntryInput) {
   const resolved = await resolveQuantityToBase(
     productId,
     inputUnit ?? product.unit,
-    quantity
+    quantity,
+    contentsPerUnit != null ? { contentsPerUnit } : undefined
   );
 
   return prisma.$transaction(async (tx) => {

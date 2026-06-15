@@ -37,7 +37,8 @@ export async function getProductUnits(productId: string): Promise<ProductUnitOpt
 export async function resolveQuantityToBase(
   productId: string,
   unit: UnitOfMeasure,
-  quantity: number
+  quantity: number,
+  options?: { contentsPerUnit?: number }
 ) {
   if (quantity <= 0) throw new Error("INVALID_QUANTITY");
 
@@ -48,8 +49,10 @@ export async function resolveQuantityToBase(
 
   let factor = 1;
   if (unit === product.unit) {
-    const row = product.units.find((u) => u.unit === unit);
-    factor = row?.conversionFactor ?? 1;
+    factor = 1;
+  } else if (options?.contentsPerUnit != null) {
+    if (options.contentsPerUnit <= 0) throw new Error("INVALID_CONTENTS_PER_UNIT");
+    factor = options.contentsPerUnit;
   } else {
     const row = product.units.find((u) => u.unit === unit);
     if (!row) throw new Error("INVALID_UNIT");
@@ -61,6 +64,7 @@ export async function resolveQuantityToBase(
     registeredUnit: unit,
     registeredQuantity: quantity,
     baseUnit: product.unit,
+    contentsPerUnit: unit === product.unit ? null : factor,
   };
 }
 
