@@ -34,57 +34,80 @@ export default async function DashboardPage() {
     data.latestPeriod?.actualFullCostPercent ??
     data.financialPreview?.actualFullCostPercent ??
     null;
-  const foodCostPct =
-    data.totalValue > 0
-      ? (data.foodCostValue / data.totalValue) * 100
-      : null;
   const opportunity =
     data.latestPeriod?.opportunityDollars ??
     data.financialPreview?.opportunityDollars ??
     0;
+  const sales = data.latestPeriod?.totalSales ?? 0;
+  const idealPct = data.latestPeriod?.targetFullCostPercent ?? 30;
+  const fc = data.financialPreview;
 
   const stats = [
     {
-      label: "Valor total inventario",
-      value: formatCurrency(data.totalValue),
+      label: "Inventario inicial",
+      value: formatCurrency(fc?.openingInventoryValue ?? 0),
       icon: DollarSign,
+      color: "text-slate-600 bg-slate-100",
+      href: "/food-cost",
+    },
+    {
+      label: "Compras",
+      value: formatCurrency(fc?.purchasesValue ?? 0),
+      icon: ShoppingCart,
       color: "text-emerald-600 bg-emerald-50",
+      href: "/purchases",
+    },
+    {
+      label: "Transferencias / préstamos",
+      value: formatCurrency(fc?.transfersOutValue ?? 0),
+      icon: HandCoins,
+      color: "text-orange-600 bg-orange-50",
+      href: "/movements?tab=transfer",
+    },
+    {
+      label: "Inventario final",
+      value: formatCurrency(fc?.closingInventoryValue ?? 0),
+      icon: Receipt,
+      color: "text-sky-600 bg-sky-50",
       href: "/valuation",
     },
     {
-      label: "Bajo mínimo",
-      value: String(data.lowStockCount),
-      icon: AlertTriangle,
-      color: "text-red-600 bg-red-50",
-      href: "/products",
-    },
-    {
-      label: "Full Cost",
-      value: fullCostPct != null ? `${fullCostPct.toFixed(1)}%` : "—",
+      label: "Inventario usado $",
+      value: formatCurrency(fc?.costOfSales ?? 0),
       icon: PieChart,
       color: "text-violet-600 bg-violet-50",
       href: "/food-cost",
     },
     {
-      label: "Food en inventario",
-      value: foodCostPct != null ? `${foodCostPct.toFixed(1)}%` : "—",
+      label: "Ventas",
+      value: sales > 0 ? formatCurrency(sales) : "—",
       icon: TrendingUp,
-      color: "text-sky-600 bg-sky-50",
+      color: "text-emerald-700 bg-emerald-50",
       href: "/food-cost",
     },
     {
-      label: "Oportunidad",
+      label: "COS %",
+      value:
+        fullCostPct != null && sales > 0
+          ? `${fullCostPct.toFixed(2)}%`
+          : "—",
+      icon: PieChart,
+      color: "text-violet-700 bg-violet-50",
+      href: "/food-cost",
+    },
+    {
+      label: "COS % ideal",
+      value: `${idealPct}%`,
+      icon: Clock,
+      color: "text-slate-600 bg-slate-100",
+      href: "/food-cost",
+    },
+    {
+      label: "Oportunidad $",
       value: formatCurrency(opportunity),
       icon: TrendingDown,
       color: "text-amber-600 bg-amber-50",
       href: "/food-cost",
-    },
-    {
-      label: "Préstamos pendientes",
-      value: String(data.pendingLoansCount),
-      icon: HandCoins,
-      color: "text-orange-600 bg-orange-50",
-      href: "/loans",
     },
   ];
 
@@ -92,7 +115,7 @@ export default async function DashboardPage() {
     <div>
       <PageHeader
         title="Resumen ejecutivo"
-        description="Entiende el negocio en menos de 30 segundos"
+        description="Food Cost de la semana: inicial + compras − transferencias − final = uso. Uso ÷ ventas = COS %."
         action={
           <div className="flex flex-wrap gap-2">
             <Link href="/purchases">
@@ -108,7 +131,7 @@ export default async function DashboardPage() {
         }
       />
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
@@ -132,6 +155,17 @@ export default async function DashboardPage() {
           );
         })}
       </div>
+
+      {sales <= 0 ? (
+        <p className="mb-6 text-sm text-slate-500">
+          Para ver <strong>Ventas</strong>, <strong>COS %</strong> y{" "}
+          <strong>Oportunidad</strong>, calcula y guarda un período en{" "}
+          <Link href="/food-cost" className="font-medium text-violet-600">
+            Food Cost
+          </Link>{" "}
+          con las ventas del período.
+        </p>
+      ) : null}
 
       {data.alerts.length > 0 ? (
         <Card className="mb-6 border-amber-200 bg-amber-50/40">
