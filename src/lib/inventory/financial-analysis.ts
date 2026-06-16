@@ -5,8 +5,15 @@ import { inventoryValueAt } from "./inventory-at-date";
 /** Costo de comida: solo ingredientes (no empaques). */
 const FOOD_COST_CLASS: FinancialClassification = "FOOD_COST";
 
+/** Filtro para consultas Prisma en relación `product`. */
+const foodProductPrismaWhere = {
+  financialClassification: FOOD_COST_CLASS,
+  includeInFoodCost: true,
+};
+
+/** Filtro para cálculo histórico en inventory-at-date. */
 const foodProductFilter = {
-  classifications: [FOOD_COST_CLASS] as FinancialClassification[],
+  classifications: [FOOD_COST_CLASS],
   includeInFoodCost: true,
 };
 
@@ -40,7 +47,7 @@ async function sumPurchases(start: Date, end: Date, storeId?: string) {
       isReversal: false,
       reversedAt: null,
       ...(storeId ? { location: { storeId } } : {}),
-      product: foodProductFilter,
+      product: foodProductPrismaWhere,
     },
   });
 
@@ -57,7 +64,7 @@ async function sumInterStoreTransfersOut(
     where: {
       date: { gte: start, lte: end },
       ...(storeId ? { fromLocation: { storeId } } : {}),
-      product: foodProductFilter,
+      product: foodProductPrismaWhere,
     },
     include: {
       fromLocation: { select: { storeId: true } },
@@ -79,7 +86,7 @@ async function outstandingLoansOutValue(at: Date, storeId?: string) {
       date: { lte: at },
       status: { not: "COMPLETE_RETURN" },
       ...(storeId ? { location: { storeId } } : {}),
-      product: foodProductFilter,
+      product: foodProductPrismaWhere,
     },
   });
 
@@ -97,7 +104,7 @@ async function outstandingLoansInValue(at: Date, storeId?: string) {
       date: { lte: at },
       status: { not: "COMPLETE_RETURN" },
       ...(storeId ? { location: { storeId } } : {}),
-      product: foodProductFilter,
+      product: foodProductPrismaWhere,
     },
   });
 
