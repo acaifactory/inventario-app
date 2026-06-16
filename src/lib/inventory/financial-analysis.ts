@@ -2,10 +2,13 @@ import type { FinancialClassification } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { inventoryValueAt } from "./inventory-at-date";
 
-const COGS_CLASSES: FinancialClassification[] = [
-  "FOOD_COST",
-  "PACKAGING_COST",
-];
+/** Costo de comida: solo ingredientes (no empaques). */
+const FOOD_COST_CLASS: FinancialClassification = "FOOD_COST";
+
+const foodProductFilter = {
+  classifications: [FOOD_COST_CLASS] as FinancialClassification[],
+  includeInFoodCost: true,
+};
 
 export type FinancialAnalysisInput = {
   startDate: Date;
@@ -29,39 +32,54 @@ export function endOfDay(date: Date) {
   return d;
 }
 
-async function sumMovements(
-  types: string[],
-  start: Date,
-  end: Date,
-  storeId?: string
-) {
+async function sumPurchases(start: Date, end: Date, storeId?: string) {
   const movements = await prisma.inventoryMovement.findMany({
     where: {
-      type: { in: types as never },
+      type: { in: ["PURCHASE", "ENTRY"] },
       date: { gte: start, lte: end },
       isReversal: false,
       reversedAt: null,
       ...(storeId ? { location: { storeId } } : {}),
-      product: { includeInFoodCost: true },
+      product: foodProductFilter,
     },
-    include: { product: true },
   });
 
   return movements.reduce((sum, m) => sum + (m.totalCost ?? 0), 0);
 }
 
-async function outstandingLoansValue(
-  direction: "OUT" | "IN",
-  at: Date,
+/** Transferencias entre tiendas distintas (salida de la tienda). */
+async function sumInterStoreTransfersOut(
+  start: Date,
+  end: Date,
   storeId?: string
 ) {
+  const transfers = await prisma.transfer.findMany({
+    where: {
+      date: { gte: start, lte: end },
+      ...(storeId ? { fromLocation: { storeId } } : {}),
+      product: foodProductFilter,
+    },
+    include: {
+      fromLocation: { select: { storeId: true } },
+      toLocation: { select: { storeId: true } },
+      movementOut: { select: { totalCost: true } },
+    },
+  });
+
+  return transfers
+    .filter((t) => t.fromLocation.storeId !== t.toLocation.storeId)
+    .reduce((sum, t) => sum + (t.movementOut.totalCost ?? 0), 0);
+}
+
+/** Préstamos OUT pendientes al cierre — se suman al inventario final para FC. */
+async function outstandingLoansOutValue(at: Date, storeId?: string) {
   const loans = await prisma.loan.findMany({
     where: {
-      direction,
+      direction: "OUT",
       date: { lte: at },
       status: { not: "COMPLETE_RETURN" },
       ...(storeId ? { location: { storeId } } : {}),
-      product: { includeInFoodCost: true },
+      product: foodProductFilter,
     },
   });
 
@@ -71,55 +89,66 @@ async function outstandingLoansValue(
   }, 0);
 }
 
-export async function calculateFinancialPeriod(
-  input: FinancialAnalysisInput
-) {
+/** Préstamos IN pendientes (mercancía prestada por otra tienda) — se restan del cierre físico. */
+async function outstandingLoansInValue(at: Date, storeId?: string) {
+  const loans = await prisma.loan.findMany({
+    where: {
+      direction: "IN",
+      date: { lte: at },
+      status: { not: "COMPLETE_RETURN" },
+      ...(storeId ? { location: { storeId } } : {}),
+      product: foodProductFilter,
+    },
+  });
+
+  return loans.reduce((sum, loan) => {
+    const pending = loan.quantity - loan.quantityReturned;
+    return sum + pending * loan.unitCost;
+  }, 0);
+}
+
+/**
+ * Uso en $ = Inventario inicial + Compras − Transferencias entre tiendas − Inventario final ajustado
+ *
+ * Inventario final ajustado = físico + préstamos OUT pendientes − préstamos IN pendientes
+ * (prestar no afecta el food cost; devolver lo prestado sí lo refleja al bajar el pendiente IN)
+ */
+export async function calculateFinancialPeriod(input: FinancialAnalysisInput) {
   const periodStart = startOfDay(input.startDate);
   const periodEnd = endOfDay(input.endDate);
-  const productFilter = {
-    classifications: COGS_CLASSES,
-    includeInFoodCost: true,
-  };
 
-  // Inventario justo antes del período (apertura)
   const openingInventoryValue = await inventoryValueAt(
     new Date(periodStart.getTime() - 1),
     input.storeId,
-    productFilter
+    foodProductFilter
   );
 
-  const closingInventoryValue = await inventoryValueAt(
+  const closingPhysicalValue = await inventoryValueAt(
     periodEnd,
     input.storeId,
-    productFilter
+    foodProductFilter
   );
 
-  const purchasesValue = await sumMovements(
-    ["PURCHASE", "ENTRY"],
-    periodStart,
-    periodEnd,
-    input.storeId
-  );
+  const [
+    purchasesValue,
+    transfersOutValue,
+    loansOutPendingValue,
+    loansInPendingValue,
+  ] = await Promise.all([
+    sumPurchases(periodStart, periodEnd, input.storeId),
+    sumInterStoreTransfersOut(periodStart, periodEnd, input.storeId),
+    outstandingLoansOutValue(periodEnd, input.storeId),
+    outstandingLoansInValue(periodEnd, input.storeId),
+  ]);
 
-  const loansInValue = await sumMovements(
-    ["LOAN_IN"],
-    periodStart,
-    periodEnd,
-    input.storeId
-  );
-
-  const loansOutValue = await outstandingLoansValue(
-    "OUT",
-    periodEnd,
-    input.storeId
-  );
+  const closingInventoryValue =
+    closingPhysicalValue + loansOutPendingValue - loansInPendingValue;
 
   const costOfSales =
     openingInventoryValue +
-    purchasesValue +
-    loansInValue -
-    closingInventoryValue -
-    loansOutValue;
+    purchasesValue -
+    transfersOutValue -
+    closingInventoryValue;
 
   const actualFullCostPercent =
     input.totalSales > 0 ? (costOfSales / input.totalSales) * 100 : 0;
@@ -135,9 +164,11 @@ export async function calculateFinancialPeriod(
   return {
     openingInventoryValue,
     purchasesValue,
-    loansInValue,
+    transfersOutValue,
+    loansInValue: loansInPendingValue,
+    closingPhysicalValue,
     closingInventoryValue,
-    loansOutValue,
+    loansOutValue: loansOutPendingValue,
     costOfSales,
     actualFullCostPercent,
     variancePercent,
@@ -157,7 +188,15 @@ export async function createFinancialPeriod(input: FinancialAnalysisInput) {
       responsibleName: input.responsibleName,
       userId: input.userId,
       storeId: input.storeId,
-      ...metrics,
+      openingInventoryValue: metrics.openingInventoryValue,
+      purchasesValue: metrics.purchasesValue,
+      loansInValue: metrics.loansInValue,
+      closingInventoryValue: metrics.closingInventoryValue,
+      loansOutValue: metrics.loansOutValue,
+      costOfSales: metrics.costOfSales,
+      actualFullCostPercent: metrics.actualFullCostPercent,
+      variancePercent: metrics.variancePercent,
+      opportunityDollars: metrics.opportunityDollars,
       status: "CLOSED",
     },
   });

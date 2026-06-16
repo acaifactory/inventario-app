@@ -11,7 +11,9 @@ import { formatCurrency, fullCostIndicator } from "@/lib/utils";
 type Metrics = {
   openingInventoryValue: number;
   purchasesValue: number;
+  transfersOutValue: number;
   loansInValue: number;
+  closingPhysicalValue?: number;
   closingInventoryValue: number;
   loansOutValue: number;
   costOfSales: number;
@@ -177,8 +179,8 @@ export default function FoodCostPage() {
   return (
     <div>
       <PageHeader
-        title="Food Cost y Full Cost"
-        description="Cost of Sales = inventario inicial + compras − inventario final. Las salidas de inventario reducen el cierre y suben el costo."
+        title="Food Cost"
+        description="Uso en $ = Inventario inicial + Compras − Transferencias entre tiendas − Inventario final ajustado. Food Cost % = Uso ÷ Ventas."
       />
 
       <Card className="mb-6 max-w-2xl">
@@ -215,7 +217,7 @@ export default function FoodCostPage() {
             />
           </div>
           <div>
-            <Label>Full Cost objetivo %</Label>
+            <Label>Food Cost ideal %</Label>
             <Input
               type="number"
               min="0"
@@ -260,7 +262,64 @@ export default function FoodCostPage() {
       </Card>
 
       {metrics ? (
-        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <>
+          <Card className="mb-6 border-violet-200 bg-violet-50/30">
+            <h3 className="mb-3 font-semibold text-violet-900">
+              Cálculo del período
+            </h3>
+            <div className="space-y-1 text-sm text-slate-700">
+              <p>
+                Inventario inicial:{" "}
+                <strong>{formatCurrency(metrics.openingInventoryValue)}</strong>
+              </p>
+              <p>
+                + Compras:{" "}
+                <strong>{formatCurrency(metrics.purchasesValue)}</strong>
+              </p>
+              <p>
+                − Transferencias entre tiendas:{" "}
+                <strong>{formatCurrency(metrics.transfersOutValue)}</strong>
+              </p>
+              <p>
+                − Inventario final ajustado:{" "}
+                <strong>{formatCurrency(metrics.closingInventoryValue)}</strong>
+                {metrics.closingPhysicalValue != null ? (
+                  <span className="text-xs text-slate-500">
+                    {" "}
+                    (físico {formatCurrency(metrics.closingPhysicalValue)}
+                    {metrics.loansOutValue > 0
+                      ? ` + prestado ${formatCurrency(metrics.loansOutValue)}`
+                      : ""}
+                    {metrics.loansInValue > 0
+                      ? ` − recibido en préstamo ${formatCurrency(metrics.loansInValue)}`
+                      : ""}
+                    )
+                  </span>
+                ) : null}
+              </p>
+              <p className="border-t border-violet-200 pt-2 font-semibold text-violet-800">
+                = Uso en $: {formatCurrency(metrics.costOfSales)}
+              </p>
+              <p>
+                Uso ÷ Ventas ({formatCurrency(Number(form.totalSales) || 0)}) ={" "}
+                <strong>{metrics.actualFullCostPercent.toFixed(2)}%</strong> Food
+                Cost
+              </p>
+              <p>
+                vs ideal {form.targetFullCostPercent}% ={" "}
+                <strong>{metrics.variancePercent.toFixed(2)}%</strong> ·
+                Oportunidad{" "}
+                <strong>{formatCurrency(metrics.opportunityDollars)}</strong>
+              </p>
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Prestar mercancía (préstamo OUT) no aumenta el food cost: el valor
+              prestado se suma al inventario final. Devolver lo que te prestaron
+              (préstamo IN) sí impacta el costo.
+            </p>
+          </Card>
+
+          <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
             <p className="text-sm text-slate-500">Inventario inicial</p>
             <p className="text-xl font-bold">
@@ -274,38 +333,44 @@ export default function FoodCostPage() {
             </p>
           </Card>
           <Card>
-            <p className="text-sm text-slate-500">Préstamos IN</p>
+            <p className="text-sm text-slate-500">Transferencias (salida)</p>
             <p className="text-xl font-bold">
-              {formatCurrency(metrics.loansInValue)}
+              {formatCurrency(metrics.transfersOutValue)}
             </p>
           </Card>
           <Card>
-            <p className="text-sm text-slate-500">Inventario final</p>
+            <p className="text-sm text-slate-500">Inventario final ajustado</p>
             <p className="text-xl font-bold">
               {formatCurrency(metrics.closingInventoryValue)}
             </p>
           </Card>
           <Card>
-            <p className="text-sm text-slate-500">Préstamos OUT pendientes</p>
+            <p className="text-sm text-slate-500">Prestado pendiente (+)</p>
             <p className="text-xl font-bold">
               {formatCurrency(metrics.loansOutValue)}
             </p>
           </Card>
+          <Card>
+            <p className="text-sm text-slate-500">Recibido en préstamo (−)</p>
+            <p className="text-xl font-bold">
+              {formatCurrency(metrics.loansInValue)}
+            </p>
+          </Card>
           <Card className="border-violet-200 bg-violet-50/40">
-            <p className="text-sm text-slate-500">Cost of Sales</p>
+            <p className="text-sm text-slate-500">Uso en $</p>
             <p className="text-xl font-bold text-violet-700">
               {formatCurrency(metrics.costOfSales)}
             </p>
           </Card>
           <Card>
             <p className="text-sm text-slate-500">
-              Full Cost real {indicatorEmoji}
+              Food Cost real {indicatorEmoji}
             </p>
             <p className="text-2xl font-bold">
               {metrics.actualFullCostPercent.toFixed(2)}%
             </p>
             <p className="text-xs text-slate-500">
-              Objetivo {form.targetFullCostPercent}% · Dif.{" "}
+              Ideal {form.targetFullCostPercent}% · Dif.{" "}
               {metrics.variancePercent.toFixed(2)}%
             </p>
           </Card>
@@ -316,6 +381,7 @@ export default function FoodCostPage() {
             </p>
           </Card>
         </div>
+        </>
       ) : null}
 
       <Card>

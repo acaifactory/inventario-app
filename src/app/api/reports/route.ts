@@ -233,58 +233,31 @@ export async function GET(request: NextRequest) {
     }
 
     case "costs": {
-      const valuation = await getValuationSummary(locationId ?? undefined);
-
       const periods = await prisma.financialPeriod.findMany({
         where: {
           status: "CLOSED",
           ...(dateFilter ? { endDate: dateFilter } : {}),
         },
         orderBy: { endDate: "desc" },
+        take: 20,
       });
 
-      const stockSummary = [
-        {
-          seccion: "Valorización actual",
-          concepto: "Food Cost (stock)",
-          valor: valuation.foodCostValue,
-        },
-        {
-          seccion: "Valorización actual",
-          concepto: "Packaging Cost (stock)",
-          valor: valuation.packagingCostValue,
-        },
-        {
-          seccion: "Valorización actual",
-          concepto: "COGS (Food + Packaging)",
-          valor: valuation.cogsValue,
-        },
-        {
-          seccion: "Valorización actual",
-          concepto: "Inventario total",
-          valor: valuation.totalValue,
-        },
-        ...valuation.byFinancial.map((f) => ({
-          seccion: "Por clasificación",
-          concepto: f.label,
-          clasificacion: f.classification,
-          valor: f.value,
-          enCogs: f.inCogs,
-        })),
-      ];
-
-      const periodRows = periods.map((p) => ({
-        seccion: "Período financiero",
-        concepto: `${p.startDate.toISOString().slice(0, 10)} — ${p.endDate.toISOString().slice(0, 10)}`,
-        ventas: p.totalSales,
-        costOfSales: p.costOfSales,
-        fullCostPct: p.actualFullCostPercent,
-        objetivoPct: p.targetFullCostPercent,
-        oportunidad: p.opportunityDollars,
-        responsable: p.responsibleName,
-      }));
-
-      return NextResponse.json([...stockSummary, ...periodRows]);
+      return NextResponse.json(
+        periods.map((p) => ({
+          concepto: `${p.startDate.toISOString().slice(0, 10)} — ${p.endDate.toISOString().slice(0, 10)}`,
+          ventas: p.totalSales,
+          valor: p.costOfSales,
+          fullCostPct: p.actualFullCostPercent,
+          objetivoPct: p.targetFullCostPercent,
+          oportunidad: p.opportunityDollars,
+          responsable: p.responsibleName,
+          openingInventoryValue: p.openingInventoryValue,
+          purchasesValue: p.purchasesValue,
+          closingInventoryValue: p.closingInventoryValue,
+          loansOutValue: p.loansOutValue,
+          loansInValue: p.loansInValue,
+        }))
+      );
     }
 
     default:
